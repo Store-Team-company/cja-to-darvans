@@ -1,0 +1,197 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+FILE="app/Services/BdpShofyDirectPusher.php"
+if [ ! -f "$FILE" ]; then
+  echo "Missing $FILE"
+  exit 1
+fi
+
+TS=$(date +%Y%m%d-%H%M%S)
+cp "$FILE" "$FILE.bak-force-storage-url-image-copy-v2-$TS"
+echo "Backup created: $FILE.bak-force-storage-url-image-copy-v2-$TS"
+
+python3 <<'PY'
+from pathlib import Path
+
+path = Path('app/Services/BdpShofyDirectPusher.php')
+text = path.read_text()
+
+# Add BdpSetting import if missing.
+if 'use App\\Models\\BdpSetting;' not in text:
+    marker = 'use App\\Models\\BdpCategoryMapping;\n'
+    if marker in text:
+        text = text.replace(marker, marker + 'use App\\Models\\BdpSetting;\n', 1)
+    else:
+        marker = 'use App\\Models\\BdpProductVariation;\n'
+        text = text.replace(marker, marker + 'use App\\Models\\BdpSetting;\n', 1)
+
+# Inject force-copy block after the empty imageUrl check in localizeVariationImage.
+needle = """        if ($imageUrl === '') {
+            return $imageUrl;
+        }
+"""
+insert = """        if ($imageUrl === '') {
+            return $imageUrl;
+        }
+
+        // BDP connected-store image bridge:
+        // Existing old-store /storage/... URLs must be physically copied to the connected store,
+        // not only domain-rewritten. Otherwise the new store loads images from the old server
+        // or points to files that do not exist on the new server.
+        $existingStoragePath = $this->relativePathFromShofyStorageUrl($imageUrl);
+        if ($existingStoragePath !== null) {
+            $cacheKey = md5('storage-copy|' . $imageUrl . '|' . $this->colorKey($color));
+            if (isset($this->localizedImageCache[$cacheKey])) {
+                return $this->localizedImageCache[$cacheKey];
+            }
+
+            $copiedUrl = $this->copyExistingStorageImageToConnectedStore($imageUrl, $product, $color);
+            if ($copiedUrl !== '') {
+                return $this->localizedImageCache[$cacheKey] = $copiedUrl;
+            }
+
+            // Do not blindly rewrite to the new domain if the file was not copied.
+            // Keep the original URL and expose the reason in the sync note.
+            $this->imageCopyNotes[] = "Could not copy {$color} existing storage image to connected store; kept original URL";
+            return $this->localizedImageCache[$cacheKey] = $imageUrl;
+        }
+"""
+if insert not in text:
+    # Replace only the first occurrence inside localizeVariationImage.
+    if needle in text:
+        text = text.replace(needle, insert, 1)
+    else:
+        raise SystemExit('Could not find imageUrl empty-check block. Please send sed -n 282,310p app/Services/BdpShofyDirectPusher.php')
+
+# Remove old early-return block if it still exists later; it is now handled above.
+old_block = """        // If the image is already a Shofy/Balenco public storage URL, keep the full URL.
+        // Botble/Shofy only auto-generates -150x150 / -600x600 URLs for relative local paths.
+        // Keeping the full URL makes variation images behave like external CJ image URLs,
+        // while still serving them from Balenco storage.
+        if ($this->relativePathFromShofyStorageUrl($imageUrl) !== null) {
+            return $imageUrl;
+        }
+
+"""
+text = text.replace(old_block, '')
+
+# Add helper methods before relativePathFromShofyStorageUrl.
+helper = r'''
+    /**
+     * Copy an existing public /storage/... image URL from the old store into the connected store.
+     * This uses the target store receiver configured by SHOFY_IMAGE_UPLOAD_URL and SHOFY_IMAGE_UPLOAD_TOKEN.
+     */
+    private function copyExistingStorageImageToConnectedStore(string $imageUrl, BdpProduct $product, string $color): string
+    {
+        $imageUrl = trim($imageUrl);
+        if ($imageUrl === '') {
+            return '';
+        }
+
+        if (!$this->shofyImageBridgeConfigured()) {
+            $this->imageCopyNotes[] = "Image bridge is not configured; cannot copy {$color} existing storage image";
+            return '';
+        }
+
+        try {
+            $bridge = app(ShofyImageUploadBridgeClient::class);
+            $result = $bridge->uploadRemoteImage(
+                $imageUrl,
+                $product->name ?: $product->slug ?: 'data-pilot-product',
+                $color ?: 'color'
+            );
+
+            if (!empty($result['success']) && !empty($result['url'])) {
+                $publicUrl = trim((string) $result['url']);
+                $this->imageCopyNotes[] = "Bridge copied {$color} existing storage image to {$publicUrl}";
+                return $this->normalizeConnectedStoreImageUrl($publicUrl);
+            }
+
+            if (!empty($result['success']) && !empty($result['path'])) {
+                $relativePath = trim((string) $result['path'], '/');
+                $publicUrl = $this->connectedStorePublicStorageUrl($relativePath);
+                if ($publicUrl !== '') {
+                    $this->imageCopyNotes[] = "Bridge copied {$color} existing storage image to {$publicUrl}";
+                    return $publicUrl;
+                }
+            }
+
+            $this->imageCopyNotes[] = "Bridge did not copy {$color} existing storage image: " . (($result['message'] ?? null) ?: 'unknown error');
+            return '';
+        } catch (Throwable $e) {
+            $this->imageCopyNotes[] = "Bridge error while copying {$color} existing storage image: " . $e->getMessage();
+            return '';
+        }
+    }
+
+    private function normalizeConnectedStoreImageUrl(string $url): string
+    {
+        $url = trim($url);
+        if ($url === '') {
+            return '';
+        }
+
+        $relativePath = $this->relativePathFromShofyStorageUrl($url);
+        if ($relativePath === null) {
+            return $url;
+        }
+
+        $connectedUrl = $this->connectedStorePublicStorageUrl($relativePath);
+        return $connectedUrl !== '' ? $connectedUrl : $url;
+    }
+
+    private function connectedStorePublicStorageUrl(string $relativePath): string
+    {
+        $relativePath = trim($relativePath, '/');
+        if ($relativePath === '') {
+            return '';
+        }
+
+        if (!str_starts_with($relativePath, 'storage/')) {
+            $relativePath = 'storage/' . $relativePath;
+        }
+
+        $domain = $this->connectedStoreDomain();
+        if ($domain === '') {
+            return '';
+        }
+
+        return rtrim($domain, '/') . '/' . ltrim($relativePath, '/');
+    }
+
+    private function connectedStoreDomain(): string
+    {
+        foreach (['connected_store_domain', 'store_domain'] as $key) {
+            try {
+                $value = trim((string) BdpSetting::getValue($key, ''));
+            } catch (Throwable $e) {
+                $value = '';
+            }
+
+            if ($value !== '') {
+                if (!preg_match('#^https?://#i', $value)) {
+                    $value = 'https://' . $value;
+                }
+                return rtrim($value, '/');
+            }
+        }
+
+        $fallback = trim((string) config('app.url', ''));
+        return $fallback !== '' ? rtrim($fallback, '/') : '';
+    }
+'''
+if 'private function copyExistingStorageImageToConnectedStore(' not in text:
+    marker = '    private function relativePathFromShofyStorageUrl(string $url): ?string\n'
+    idx = text.find(marker)
+    if idx == -1:
+        raise SystemExit('Could not find relativePathFromShofyStorageUrl() method marker.')
+    text = text[:idx] + helper + '\n' + text[idx:]
+
+path.write_text(text)
+print('Forced existing storage variation images through the image bridge before saving image URLs.')
+PY
+
+php -l "$FILE"
+echo "Patch installed successfully."
+echo "Next run: php artisan optimize:clear && php artisan view:clear && php artisan route:clear && php artisan config:clear && php artisan cache:clear"

@@ -1,0 +1,44 @@
+Balenco Data Pilot v0.6.4 - Shofy Image Upload Bridge
+
+This package has two parts:
+
+1) data-pilot/
+Upload/merge this into the Data Pilot Laravel app:
+/home/1556810.cloudwaysapps.com/rgxpgjudaw/public_html
+
+2) shofy-bridge/
+Upload/merge this into the Shofy/Balenco Laravel app:
+/home/1556810.cloudwaysapps.com/pudvegadzq/public_html
+
+After uploading shofy-bridge, add this to Shofy routes/web.php:
+require __DIR__ . '/balenco-data-pilot-bridge.php';
+
+Add this to Shofy .env:
+BDP_IMAGE_UPLOAD_TOKEN=change-this-long-random-token
+
+Add this to Data Pilot .env:
+BDP_SYNC_DEFAULT_STATUS=draft
+BDP_COPY_VARIATION_IMAGES_TO_SHOFY=true
+SHOFY_IMAGE_UPLOAD_URL=https://store.balencousa.com/balenco-data-pilot/upload-image
+SHOFY_IMAGE_UPLOAD_TOKEN=change-this-long-random-token
+SHOFY_VARIATION_IMAGE_SUBDIR=products
+
+Run in Shofy app root:
+php artisan optimize:clear
+
+Run in Data Pilot app root:
+php artisan optimize:clear
+php artisan migrate
+
+Test bridge from Data Pilot server:
+curl -X POST https://store.balencousa.com/balenco-data-pilot/upload-image \
+  -H "Authorization: Bearer change-this-long-random-token" \
+  -d "image_url=https://via.placeholder.com/600.jpg" \
+  -d "filename=bdp-test-image" \
+  -d "subdir=products"
+
+Expected response:
+{"success":true,"path":"products/bdp-test-image.jpg", ...}
+
+The Shofy database should store only relative path:
+products/bdp-test-image.jpg

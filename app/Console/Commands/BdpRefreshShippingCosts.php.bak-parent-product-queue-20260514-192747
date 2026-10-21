@@ -1,0 +1,92 @@
+<?php
+
+namespace App\Console\Commands;
+
+use App\Models\BdpProduct;
+use App\Services\BdpCjApiService;
+use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Schema;
+
+class BdpRefreshShippingCosts extends Command
+{
+    protected $signature = 'bdp:refresh-shipping-costs
+        {--limit=1 : Number of products to process per run}
+        {--country=US : Destination country code}
+        {--quantity=1 : Quantity used for shipping estimate}
+        {--force : Include products that already have shipping cost}
+        {--sleep=0 : Seconds to wait between products if limit is more than 1}';
+
+    protected $description = 'Refresh CJ inventory/shipping and landed cost for Data Pilot products, safely one product at a time.';
+
+    public function handle(BdpCjApiService $cj): int
+    {
+        $limit = max(1, min(50, (int) $this->option('limit')));
+        $country = strtoupper((string) ($this->option('country') ?: 'US'));
+        $quantity = max(1, min(100, (int) $this->option('quantity')));
+        $sleep = max(0, min(30, (int) $this->option('sleep')));
+        $force = (bool) $this->option('force');
+
+        $query = BdpProduct::query()
+            ->with('variations')
+            ->whereHas('variations')
+            ->orderByRaw('cj_shipping_fee IS NOT NULL')
+            ->orderBy('id');
+
+        if (!$force) {
+            $query->where(function ($q) {
+                $q->whereNull('cj_shipping_fee')
+                    ->orWhereNull('landed_cost')
+                    ->orWhere('cj_shipping_fee', '<=', 0);
+            });
+        }
+
+        $products = $query->limit($limit)->get();
+
+        if ($products->isEmpty()) {
+            $this->info($force
+                ? 'No products found.'
+                : 'No products need shipping refresh. Use --force to refresh already updated products.'
+            );
+
+            return self::SUCCESS;
+        }
+
+        $processed = 0;
+        $success = 0;
+        $failed = 0;
+
+        foreach ($products as $product) {
+            $processed++;
+
+            try {
+                $this->line("Refreshing product #{$product->id} | {$product->sku} | {$product->name}");
+
+                $result = $cj->refreshInventoryAndShipping($product, $country, $quantity);
+
+                $product->refresh();
+
+                $hasFee = $product->cj_shipping_fee !== null && (float) $product->cj_shipping_fee > 0;
+
+                if ($hasFee) {
+                    $success++;
+                    $this->info("OK: shipping={$product->cj_shipping_fee}, landed={$product->landed_cost}");
+                } else {
+                    $failed++;
+                    $error = !empty($result['errors']) ? implode(' | ', array_slice($result['errors'], 0, 3)) : 'No shipping fee returned.';
+                    $this->warn("Skipped/failed: {$error}");
+                }
+            } catch (\Throwable $e) {
+                $failed++;
+                $this->error("Error product #{$product->id}: {$e->getMessage()}");
+            }
+
+            if ($sleep > 0 && $processed < $products->count()) {
+                sleep($sleep);
+            }
+        }
+
+        $this->info("Done. Processed {$processed}. Success {$success}. Failed {$failed}.");
+
+        return $failed > 0 && $success === 0 ? self::FAILURE : self::SUCCESS;
+    }
+}

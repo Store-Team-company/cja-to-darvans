@@ -1,0 +1,561 @@
+@extends('balenco-data-pilot.layout')
+
+@section('content')
+<div class="card">
+    <h2>Import Products</h2>
+    <p>Upload either a WooCommerce product CSV from your CJA staging site, or a direct CJA product export Excel/CSV.</p>
+
+    <form method="post" action="{{ route('bdp.import') }}" enctype="multipart/form-data">
+        @csrf
+
+        <label><strong>Import Source</strong></label>
+        <select name="source" required>
+            <option value="woocommerce">WooCommerce CSV</option>
+            <option value="cja">CJA Excel / CSV</option>
+        </select>
+        @error('source')<p class="error msg">{{ $message }}</p>@enderror
+
+        <br><br>
+
+        <label><strong>File</strong></label>
+        <input type="file" name="file" accept=".csv,.txt,.xlsx,.xlsm" required>
+        @error('file')<p class="error msg">{{ $message }}</p>@enderror
+
+        <br><br>
+        <button class="btn orange" type="submit">Import Products</button>
+    </form>
+</div>
+
+<div class="card">
+    <h3>CJA Excel Import Notes</h3>
+    <p>This importer reads CJA columns like <strong>Product Title</strong>, <strong>SKU</strong>, <strong>Specification</strong>, <strong>Available Inventory</strong>, <strong>Total Cost ($)</strong>, and embedded variation images.</p>
+    <p>Parent product images are intentionally not imported. You will upload the optimized parent gallery manually in Balenco. Variation images are imported and reused by color.</p>
+</div>
+@endsection
+
+
+{{-- BDP_BULK_SEO_IMPORT_SECTION_START --}}
+@if (session('success'))
+    <div style="margin: 16px 0; padding: 14px 16px; border: 1px solid #bbf7d0; background: #f0fdf4; color: #166534; border-radius: 12px; font-weight: 700;">
+        {{ session('success') }}
+    </div>
+@endif
+@if (session('warning'))
+    <div style="margin: 16px 0; padding: 14px 16px; border: 1px solid #fde68a; background: #fffbeb; color: #92400e; border-radius: 12px; font-weight: 700;">
+        {{ session('warning') }}
+    </div>
+@endif
+@if (session('error'))
+    <div style="margin: 16px 0; padding: 14px 16px; border: 1px solid #fecaca; background: #fef2f2; color: #991b1b; border-radius: 12px; font-weight: 700;">
+        {{ session('error') }}
+    </div>
+@endif
+
+<div class="bdp-card" style="margin: 22px 0; padding: 24px; border: 1px solid #e5e7eb; background: #fff; border-radius: 18px; box-shadow: 0 12px 30px rgba(15,23,42,.06);">
+    <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:18px; flex-wrap:wrap;">
+        <div>
+            <h2 style="margin:0 0 8px; font-size:22px; font-weight:800; color:#0f172a;">Update Products from Optimized SEO CSV</h2>
+            <p style="margin:0; color:#475569; max-width:850px; line-height:1.6;">
+                Use this only for the slim Data Pilot SEO/content CSV. It updates product title, slug, short description, long description, tags, meta title, meta description, and focus keyword.
+            </p>
+        </div>
+        <a href="{{ route('bdp.products') }}" class="bdp-btn light" style="text-decoration:none;">Back to Products</a>
+    </div>
+
+    <div style="margin-top:18px; padding:16px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:14px; color:#334155; line-height:1.65;">
+        <strong>Safe matching:</strong> import matches by <code>product_id</code> first and verifies <code>sku</code>. If the SKU does not match, that row is skipped.
+        Do not edit <code>row_type</code>, <code>product_id</code>, or <code>sku</code>.
+    </div>
+
+    <form method="post" action="{{ route('bdp.bulk.optimization.import') }}" enctype="multipart/form-data" style="margin-top:20px; display:grid; gap:16px; max-width:900px;">
+        @csrf
+        <input type="hidden" name="update_products" value="0">
+
+        <label style="display:grid; gap:8px; font-weight:800; color:#0f172a;">
+            Optimized SEO CSV File
+            <input type="file" name="csv_file" accept=".csv,text/csv" required style="border:1px solid #cbd5e1; border-radius:12px; padding:12px; background:#fff;">
+        </label>
+
+        <label style="display:flex; gap:10px; align-items:flex-start; padding:14px; background:#fff7ed; border:1px solid #fed7aa; border-radius:12px; color:#7c2d12; font-weight:700; line-height:1.5;">
+            <input type="checkbox" name="update_products" value="1" required style="margin-top:4px;">
+            <span>Yes, update existing Data Pilot products using this optimized SEO/content CSV.</span>
+        </label>
+
+        <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+            <button type="submit" class="bdp-btn" style="background:#ff5a1f; color:#fff; border:0; padding:12px 18px; border-radius:12px; font-weight:800; cursor:pointer;">
+                Update Products from SEO CSV
+            </button>
+            <span style="color:#64748b; font-size:13px;">After updating, review products, then sync selected products to Shofy/Botble.</span>
+        </div>
+    </form>
+</div>
+{{-- BDP_BULK_SEO_IMPORT_SECTION_END --}}
+
+
+<style id="bdp-import-clean-ui">
+/* Clean Imports page UI */
+.bdp-seo-import-clean-card {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 16px;
+    padding: 18px;
+    margin: 0 0 22px;
+    box-shadow: 0 12px 28px rgba(15, 23, 42, .05);
+}
+
+.bdp-seo-import-clean-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 14px;
+}
+
+.bdp-seo-import-clean-head h2 {
+    margin: 0;
+    font-size: 18px;
+    line-height: 1.25;
+    color: #0f172a;
+}
+
+.bdp-seo-import-clean-head p {
+    margin: 4px 0 0;
+    color: #64748b;
+    font-size: 12px;
+}
+
+.bdp-seo-import-clean-note {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 10px 12px;
+    color: #334155;
+    font-size: 12px;
+    margin-bottom: 14px;
+}
+
+.bdp-seo-import-clean-form {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+    max-width: 620px;
+}
+
+.bdp-seo-import-clean-form label {
+    display: block;
+    font-size: 12px;
+    font-weight: 800;
+    color: #334155;
+    margin-bottom: 6px;
+}
+
+.bdp-seo-import-clean-form input[type="file"] {
+    width: 100%;
+    border: 1px solid #dbe3ef;
+    border-radius: 10px;
+    padding: 9px;
+    background: #fff;
+}
+
+.bdp-seo-import-clean-confirm {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    background: #fff7ed;
+    border: 1px solid #fed7aa;
+    color: #7c2d12;
+    border-radius: 12px;
+    padding: 10px 12px;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.bdp-seo-import-clean-confirm input {
+    width: 15px;
+    height: 15px;
+}
+
+.bdp-seo-import-clean-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.bdp-seo-import-clean-actions .bdp-btn,
+.bdp-seo-import-clean-actions button {
+    min-height: 40px;
+}
+
+/* Hide old duplicated SEO importer blocks above/below once JS creates the clean card */
+.bdp-seo-import-clean-card ~ .bdp-seo-import-clean-card {
+    display: none !important;
+}
+
+[data-bdp-old-seo-import="1"] {
+    display: none !important;
+}
+</style>
+
+<script id="bdp-import-clean-ui-js">
+(function () {
+    function findSeoImportForms() {
+        return Array.prototype.slice.call(document.querySelectorAll('form')).filter(function (form) {
+            var action = form.getAttribute('action') || '';
+            return action.indexOf('bulk-optimization/import') !== -1;
+        });
+    }
+
+    function cleanImportsUi() {
+        var forms = findSeoImportForms();
+        if (!forms.length) return;
+
+        // Keep first SEO form only, hide duplicates.
+        forms.forEach(function (form, index) {
+            if (index > 0) {
+                var parent = form.closest('.bdp-card, .bdp-seo-import-panel, .bdp-seo-import-clean-card, section, div') || form;
+                parent.setAttribute('data-bdp-old-seo-import', '1');
+                return;
+            }
+
+            if (form.closest('.bdp-seo-import-clean-card')) return;
+
+            var oldWrap = form.parentElement;
+
+            // Mark old visible text blocks close to this form as hidden if they are duplicate wrappers.
+            if (oldWrap && oldWrap !== document.body) {
+                oldWrap.setAttribute('data-bdp-old-seo-import', '1');
+            }
+
+            var card = document.createElement('div');
+            card.className = 'bdp-seo-import-clean-card';
+
+            var head = document.createElement('div');
+            head.className = 'bdp-seo-import-clean-head';
+            head.innerHTML =
+                '<div><h2>Update Products from SEO CSV</h2><p>Matches by product ID. SKU can be updated.</p></div>' +
+                '<a class="bdp-btn light" href="' + window.location.origin + '/products">Back to Products</a>';
+
+            var note = document.createElement('div');
+            note.className = 'bdp-seo-import-clean-note';
+            note.innerHTML = '<strong>Safe rule:</strong> Do not change <strong>row_type</strong> or <strong>product_id</strong>.';
+
+            var insertBefore = oldWrap || form;
+            insertBefore.parentNode.insertBefore(card, insertBefore);
+            card.appendChild(head);
+            card.appendChild(note);
+
+            form.classList.add('bdp-seo-import-clean-form');
+            card.appendChild(form);
+
+            var file = form.querySelector('input[type="file"]');
+            if (file && !file.closest('[data-bdp-file-wrap]')) {
+                var fileWrap = document.createElement('div');
+                fileWrap.setAttribute('data-bdp-file-wrap', '1');
+                file.parentNode.insertBefore(fileWrap, file);
+                fileWrap.innerHTML = '<label>Optimized SEO CSV</label>';
+                fileWrap.appendChild(file);
+            }
+
+            var check = form.querySelector('input[name="update_products"]');
+            if (check && !check.closest('.bdp-seo-import-clean-confirm')) {
+                var confirm = document.createElement('label');
+                confirm.className = 'bdp-seo-import-clean-confirm';
+                check.parentNode.insertBefore(confirm, check);
+                confirm.appendChild(check);
+                confirm.appendChild(document.createTextNode(' Yes, update existing products'));
+            }
+
+            var submit = form.querySelector('button[type="submit"], input[type="submit"]');
+            if (submit && !submit.closest('.bdp-seo-import-clean-actions')) {
+                var actions = document.createElement('div');
+                actions.className = 'bdp-seo-import-clean-actions';
+                submit.parentNode.insertBefore(actions, submit);
+                actions.appendChild(submit);
+            }
+        });
+
+        // Hide duplicate headings/text blocks that previous patches left above the real import page.
+        Array.prototype.slice.call(document.querySelectorAll('h1, h2, h3')).forEach(function (h) {
+            if (/Update Products from Optimized SEO CSV/i.test(h.textContent || '')) {
+                var card = h.closest('.bdp-seo-import-clean-card');
+                if (!card) {
+                    var wrap = h.closest('.bdp-card, section, div');
+                    if (wrap && !wrap.querySelector('.bdp-seo-import-clean-card')) {
+                        wrap.setAttribute('data-bdp-old-seo-import', '1');
+                    }
+                }
+            }
+        });
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', cleanImportsUi);
+    } else {
+        cleanImportsUi();
+    }
+})();
+</script>
+
+
+
+<style id="bdp-import-tabs-ui">
+/* Import page tabs */
+.bdp-import-tabs-shell {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 18px;
+    box-shadow: 0 14px 34px rgba(15, 23, 42, .06);
+    margin: 0 0 24px;
+    overflow: hidden;
+}
+
+.bdp-import-tabs-nav {
+    display: flex;
+    gap: 8px;
+    padding: 14px;
+    border-bottom: 1px solid #e5e7eb;
+    background: #f8fafc;
+}
+
+.bdp-import-tab-btn {
+    border: 1px solid #dbe3ef;
+    background: #fff;
+    color: #334155;
+    border-radius: 999px;
+    padding: 10px 16px;
+    font-size: 13px;
+    font-weight: 800;
+    cursor: pointer;
+}
+
+.bdp-import-tab-btn.is-active {
+    background: #0f172a;
+    border-color: #0f172a;
+    color: #fff;
+}
+
+.bdp-import-tabs-body {
+    padding: 22px;
+}
+
+.bdp-import-tab-panel {
+    display: none;
+}
+
+.bdp-import-tab-panel.is-active {
+    display: block;
+}
+
+.bdp-import-tab-panel h2 {
+    margin: 0 0 6px;
+    font-size: 20px;
+    line-height: 1.25;
+    color: #0f172a;
+}
+
+.bdp-import-tab-panel .bdp-tab-help {
+    margin: 0 0 16px;
+    color: #64748b;
+    font-size: 13px;
+}
+
+.bdp-import-tab-note {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 10px 12px;
+    color: #334155;
+    font-size: 12px;
+    margin-bottom: 14px;
+}
+
+.bdp-import-tab-panel form {
+    max-width: 760px;
+}
+
+.bdp-import-tab-panel label {
+    font-size: 12px;
+    font-weight: 800;
+    color: #334155;
+    margin: 0 0 6px;
+    display: block;
+}
+
+.bdp-import-tab-panel input[type="file"],
+.bdp-import-tab-panel select {
+    width: 100%;
+    border: 1px solid #dbe3ef;
+    border-radius: 10px;
+    padding: 10px;
+    background: #fff;
+    min-height: 42px;
+}
+
+.bdp-import-tab-panel button[type="submit"],
+.bdp-import-tab-panel input[type="submit"] {
+    margin-top: 12px;
+}
+
+.bdp-seo-confirm-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #fff7ed;
+    border: 1px solid #fed7aa;
+    color: #7c2d12;
+    border-radius: 12px;
+    padding: 10px 12px;
+    margin: 12px 0;
+    max-width: 760px;
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.bdp-seo-confirm-row input {
+    width: 15px;
+    height: 15px;
+}
+
+/* Hide old duplicate SEO/import headings after we move forms into tabs */
+[data-bdp-import-tab-hidden="1"] {
+    display: none !important;
+}
+</style>
+
+<script id="bdp-import-tabs-ui-js">
+(function () {
+    function closestBlock(el) {
+        return el.closest('.bdp-card, .card, section, article, .bdp-seo-import-clean-card, .bdp-seo-import-panel, div') || el.parentElement;
+    }
+
+    function textLooksLike(el, pattern) {
+        return el && pattern.test((el.textContent || '').trim());
+    }
+
+    function hideNearbyOldHeadings(pattern) {
+        Array.prototype.slice.call(document.querySelectorAll('h1,h2,h3,p,.bdp-card,.bdp-seo-import-clean-card,.bdp-seo-import-panel')).forEach(function (el) {
+            if (textLooksLike(el, pattern) && !el.closest('.bdp-import-tabs-shell')) {
+                var block = el.closest('.bdp-seo-import-clean-card, .bdp-seo-import-panel, .bdp-card, section') || el;
+                block.setAttribute('data-bdp-import-tab-hidden', '1');
+            }
+        });
+    }
+
+    function initImportTabs() {
+        if (document.querySelector('.bdp-import-tabs-shell')) return;
+
+        var forms = Array.prototype.slice.call(document.querySelectorAll('form'));
+
+        var seoForm = forms.find(function (form) {
+            var action = form.getAttribute('action') || '';
+            return action.indexOf('bulk-optimization/import') !== -1;
+        });
+
+        var productForm = forms.find(function (form) {
+            if (form === seoForm) return false;
+            var hasFile = !!form.querySelector('input[type="file"]');
+            var hasImportSource = !!form.querySelector('select[name*="source"], select[name*="import"], select');
+            var action = form.getAttribute('action') || '';
+            return hasFile && (hasImportSource || action.indexOf('import') !== -1);
+        });
+
+        if (!seoForm && !productForm) return;
+
+        var insertTarget = (productForm && closestBlock(productForm)) || (seoForm && closestBlock(seoForm)) || document.querySelector('main') || document.body;
+
+        var shell = document.createElement('div');
+        shell.className = 'bdp-import-tabs-shell';
+
+        shell.innerHTML =
+            '<div class="bdp-import-tabs-nav">' +
+                '<button type="button" class="bdp-import-tab-btn is-active" data-bdp-import-tab="seo">Update Products from SEO CSV</button>' +
+                '<button type="button" class="bdp-import-tab-btn" data-bdp-import-tab="products">Import Products</button>' +
+            '</div>' +
+            '<div class="bdp-import-tabs-body">' +
+                '<div class="bdp-import-tab-panel is-active" data-bdp-import-panel="seo">' +
+                    '<h2>Update Products from SEO CSV</h2>' +
+                    '<p class="bdp-tab-help">Update existing Data Pilot products after bulk SEO optimization.</p>' +
+                    '<div class="bdp-import-tab-note"><strong>Match:</strong> product_id first. SKU can be updated. Do not change row_type or product_id.</div>' +
+                '</div>' +
+                '<div class="bdp-import-tab-panel" data-bdp-import-panel="products">' +
+                    '<h2>Import Products</h2>' +
+                    '<p class="bdp-tab-help">Upload WooCommerce or CJA product CSV/Excel files.</p>' +
+                '</div>' +
+            '</div>';
+
+        insertTarget.parentNode.insertBefore(shell, insertTarget);
+
+        var seoPanel = shell.querySelector('[data-bdp-import-panel="seo"]');
+        var productPanel = shell.querySelector('[data-bdp-import-panel="products"]');
+
+        if (seoForm) {
+            seoPanel.appendChild(seoForm);
+
+            var checkbox = seoForm.querySelector('input[name="update_products"]');
+            if (checkbox && !checkbox.closest('.bdp-seo-confirm-row')) {
+                var row = document.createElement('label');
+                row.className = 'bdp-seo-confirm-row';
+                checkbox.parentNode.insertBefore(row, checkbox);
+                row.appendChild(checkbox);
+                row.appendChild(document.createTextNode(' Yes, update existing products'));
+            }
+
+            var file = seoForm.querySelector('input[type="file"]');
+            if (file && !file.previousElementSibling) {
+                var label = document.createElement('label');
+                label.textContent = 'Optimized SEO CSV File';
+                file.parentNode.insertBefore(label, file);
+            }
+        } else {
+            seoPanel.insertAdjacentHTML('beforeend', '<div class="bdp-import-tab-note">SEO CSV import form was not found.</div>');
+        }
+
+        if (productForm) {
+            productPanel.appendChild(productForm);
+
+            var productNotes = Array.prototype.slice.call(document.querySelectorAll('h3,p')).filter(function (el) {
+                return /CJA Excel Import Notes|embedded variation images|Parent product images/i.test(el.textContent || '');
+            });
+
+            if (productNotes.length) {
+                var notes = document.createElement('div');
+                notes.className = 'bdp-import-tab-note';
+                notes.innerHTML = '<strong>Note:</strong> CJA imports can read product title, SKU, specification, inventory, cost, and variation images.';
+                productPanel.appendChild(notes);
+            }
+        } else {
+            productPanel.insertAdjacentHTML('beforeend', '<div class="bdp-import-tab-note">Product import form was not found.</div>');
+        }
+
+        // Hide old blocks/headings left behind by earlier patches.
+        hideNearbyOldHeadings(/Update Products from SEO CSV|Update Products from Optimized SEO CSV/i);
+        hideNearbyOldHeadings(/Import Products/i);
+        Array.prototype.slice.call(document.querySelectorAll('h3,p')).forEach(function (el) {
+            if (/CJA Excel Import Notes|embedded variation images|Parent product images/i.test(el.textContent || '') && !el.closest('.bdp-import-tabs-shell')) {
+                el.setAttribute('data-bdp-import-tab-hidden', '1');
+            }
+        });
+
+        shell.querySelectorAll('.bdp-import-tab-btn').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                var tab = btn.getAttribute('data-bdp-import-tab');
+
+                shell.querySelectorAll('.bdp-import-tab-btn').forEach(function (b) {
+                    b.classList.toggle('is-active', b === btn);
+                });
+
+                shell.querySelectorAll('.bdp-import-tab-panel').forEach(function (panel) {
+                    panel.classList.toggle('is-active', panel.getAttribute('data-bdp-import-panel') === tab);
+                });
+            });
+        });
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initImportTabs);
+    } else {
+        initImportTabs();
+    }
+})();
+</script>
+

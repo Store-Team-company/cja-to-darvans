@@ -1,0 +1,23 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration {
+    public function up(): void
+    {
+        Schema::create('bdp_category_mappings', function (Blueprint $table) {
+            $table->id();
+            $table->string('source_category')->unique();
+            $table->unsignedBigInteger('balenco_category_id')->nullable()->index();
+            $table->string('balenco_category_name')->nullable();
+            $table->timestamps();
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('bdp_category_mappings');
+    }
+};

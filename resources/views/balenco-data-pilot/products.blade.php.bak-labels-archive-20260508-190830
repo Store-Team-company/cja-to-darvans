@@ -1,0 +1,508 @@
+@extends('balenco-data-pilot.layout')
+
+@section('title', 'Products | Balenco Data Pilot')
+
+@section('content')
+@php
+    $tabs = [
+        'all' => 'All',
+        'not_synced' => 'Not Synced',
+        'synced' => 'Synced',
+        'needs_review' => 'Needs Review',
+        'failed' => 'Failed',
+    ];
+
+    $bdpSettingsRows = [];
+
+    try {
+        if (\Illuminate\Support\Facades\Schema::hasTable('bdp_settings')) {
+            $bdpSettingsRows = \Illuminate\Support\Facades\DB::table('bdp_settings')->pluck('value', 'key')->toArray();
+        }
+    } catch (\Throwable $e) {
+        $bdpSettingsRows = [];
+    }
+
+    $bdpSetting = function (array $keys, $default = null) use ($bdpSettingsRows) {
+        foreach ($keys as $key) {
+            if (array_key_exists($key, $bdpSettingsRows) && $bdpSettingsRows[$key] !== null && $bdpSettingsRows[$key] !== '') {
+                return $bdpSettingsRows[$key];
+            }
+        }
+
+        return $default;
+    };
+
+    $bdpBool = function ($value, $default = false) {
+        if ($value === null || $value === '') {
+            return (bool) $default;
+        }
+
+        return filter_var($value, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) ?? (bool) $default;
+    };
+
+    $bdpSyncDefault = $bdpSetting(['default_sync_status', 'sync_status'], 'draft');
+
+    $bdpCopyVariation = $bdpBool(
+        $bdpSetting(['copy_variation_images_to_shofy', 'copy_variation_images'], null),
+        true
+    );
+
+    $bdpParentFeatured = $bdpBool(
+        $bdpSetting(['push_parent_featured_image', 'sync_parent_featured_image', 'parent_image_sync'], null),
+        false
+    );
+
+    $bdpParentGallery = $bdpBool(
+        $bdpSetting(['push_parent_gallery_images', 'sync_parent_gallery_images', 'gallery_image_sync'], null),
+        false
+    );
+
+    $bdpParentSync = $bdpParentFeatured || $bdpParentGallery;
+@endphp
+
+<style>
+    .bdp-products-shell{display:flex;flex-direction:column;gap:18px}
+    .bdp-products-head{display:flex;justify-content:space-between;gap:18px;align-items:flex-start}
+    .bdp-products-head-actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end}
+    .bdp-products-search-card{padding:18px}
+    .bdp-products-filter-grid{display:grid;grid-template-columns:minmax(260px,1.7fr) minmax(140px,.8fr) minmax(140px,.8fr) minmax(110px,.55fr) auto auto;gap:12px;align-items:end}
+    .bdp-products-tools{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+    .bdp-tool-toggle{border:1px solid var(--bdp-border);background:#fff;border-radius:12px;padding:10px 13px;font-weight:800;color:var(--bdp-navy);cursor:pointer;display:inline-flex;gap:8px;align-items:center}
+    .bdp-tool-toggle:hover{background:#f8fafc}
+    .bdp-tool-toggle.active{background:#eff6ff;border-color:#bfdbfe;color:#1d4ed8}
+    .bdp-tool-panel{display:none}
+    .bdp-tool-panel.is-open{display:block}
+    .bdp-selected-bar{display:flex;align-items:center;justify-content:space-between;gap:14px;background:#0f1f3d;color:#fff;border-radius:16px;padding:13px 16px;margin-top:14px}
+    .bdp-selected-bar strong{font-size:14px}
+    .bdp-selected-actions{display:flex;gap:10px;flex-wrap:wrap}
+    .bdp-btn.dark{background:#0f1f3d;color:#fff}
+    .bdp-btn.danger-light{background:#fff1f2;color:#be123c;border-color:#fecdd3}
+    .bdp-products-table .bdp-product-title{max-width:300px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+    .bdp-products-table .bdp-product-meta{max-width:320px;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden}
+    .bdp-product-thumb-wrap{position:relative}
+    .bdp-row-actions{display:flex;align-items:center;gap:8px}
+    .bdp-icon-btn{width:34px;height:34px;border-radius:10px;border:1px solid var(--bdp-border);background:#fff;color:var(--bdp-muted);display:inline-flex;align-items:center;justify-content:center;text-decoration:none}
+    .bdp-icon-btn:hover{background:#f8fafc;color:var(--bdp-navy)}
+    .bdp-compact-note{display:flex;align-items:center;gap:8px;color:var(--bdp-muted);font-size:12px}
+    .bdp-table-footer{display:flex;justify-content:space-between;gap:15px;align-items:center;margin-top:16px;flex-wrap:wrap}
+    .bdp-page-links{font-size:13px;color:#475569}
+    .bdp-page-links nav{display:flex!important;justify-content:flex-end!important;align-items:center!important;gap:10px!important;flex-wrap:wrap!important}
+    .bdp-page-links nav > div{display:flex!important;align-items:center!important;gap:8px!important;flex-wrap:wrap!important}
+    .bdp-page-links .pagination{display:flex;gap:6px;list-style:none;margin:0;padding:0;align-items:center}
+    .bdp-page-links .page-link,.bdp-page-links .page-item span,.bdp-page-links nav a,.bdp-page-links nav span[aria-current] span,.bdp-page-links nav span[aria-disabled] span{display:inline-flex!important;min-width:34px!important;height:34px!important;max-width:90px!important;align-items:center!important;justify-content:center!important;border:1px solid var(--bdp-border)!important;border-radius:10px!important;background:#fff!important;color:var(--bdp-navy)!important;text-decoration:none!important;padding:0 10px!important;font-size:13px!important;line-height:1!important;box-shadow:none!important}
+    .bdp-page-links svg{width:16px!important;height:16px!important;max-width:16px!important;max-height:16px!important;display:block!important;stroke-width:2!important}
+    .bdp-page-links .active .page-link,.bdp-page-links .active span,.bdp-page-links nav span[aria-current] span{background:#0f1f3d!important;color:#fff!important;border-color:#0f1f3d!important}
+    .bdp-page-links .disabled span,.bdp-page-links nav span[aria-disabled] span{opacity:.45!important;background:#f8fafc!important}
+    .bdp-page-links p{margin:0!important;color:#64748b!important;font-size:12px!important}
+    .bdp-empty-products{text-align:center;padding:48px 20px;border:1px dashed #cbd5e1;border-radius:18px;background:#f8fafc}
+    .bdp-product-list-tabs{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:14px 0 16px}
+    .bdp-list-header-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:flex-end}
+    .bdp-sync-settings-summary{display:flex;align-items:center;justify-content:space-between;gap:12px;background:#f8fafc;border:1px solid #edf1f7;border-radius:14px;padding:12px 14px;margin-top:12px;flex-wrap:wrap}
+    .bdp-sync-settings-summary .summary-text{color:#475569;font-size:13px;line-height:1.45}
+    .bdp-sync-settings-summary strong{color:#0f172a}
+    @media(max-width:1100px){
+        .bdp-products-filter-grid{grid-template-columns:1fr 1fr}
+        .bdp-products-head{flex-direction:column}
+        .bdp-products-head-actions{justify-content:flex-start}
+        .bdp-selected-bar{align-items:flex-start;flex-direction:column}
+    }
+    @media(max-width:720px){
+        .bdp-products-filter-grid{grid-template-columns:1fr}
+        .bdp-products-tools{display:grid;grid-template-columns:1fr}
+        .bdp-tool-toggle{justify-content:space-between}
+        .bdp-table-footer{align-items:flex-start;flex-direction:column}
+    }
+</style>
+
+@php
+    // BDP_PRODUCT_CATEGORY_DROPDOWN_DATA
+    try {
+        $bdpBalencoCategories = \Illuminate\Support\Facades\Schema::hasTable('bdp_balenco_categories')
+            ? \App\Models\BdpBalencoCategory::orderBy('path')->orderBy('name')->get()
+            : collect();
+    } catch (\Throwable $e) {
+        $bdpBalencoCategories = collect();
+    }
+@endphp
+
+<div class="bdp-products-shell">
+    <div class="bdp-products-head">
+        <div class="bdp-page-title">
+            <h1>Products</h1>
+            <p>Manage imported CJ products, pricing, categories, variation images, and Balenco sync status.</p>
+        </div>
+        <div class="bdp-products-head-actions">
+            <a class="bdp-btn light" href="{{ route('bdp.cj.import') }}">Import from CJ</a>
+            <button class="bdp-btn orange" type="submit" form="bdp-products-form" formaction="{{ route('bdp.push') }}" formmethod="post">Sync Selected</button>
+        </div>
+    </div>
+
+    <div class="bdp-grid bdp-stats" style="grid-template-columns:repeat(5,minmax(150px,1fr))">
+        <div class="bdp-stat-card">
+            <div class="bdp-stat-icon is-blue">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8 12 3 3 8l9 5 9-5Z"/><path d="M3 8v8l9 5 9-5V8"/></svg>
+            </div>
+            <div><div class="bdp-stat-label">All Products</div><div class="bdp-stat-number">{{ $counts['all'] ?? 0 }}</div><div class="bdp-stat-note">Imported into Data Pilot</div></div>
+        </div>
+        <div class="bdp-stat-card">
+            <div class="bdp-stat-icon is-green">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m20 6-11 11-5-5"/></svg>
+            </div>
+            <div><div class="bdp-stat-label">Synced</div><div class="bdp-stat-number">{{ $counts['synced'] ?? 0 }}</div><div class="bdp-stat-note">Live in Balenco</div></div>
+        </div>
+        <div class="bdp-stat-card">
+            <div class="bdp-stat-icon is-orange">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 0 0-15.5-6.2L3 8"/><path d="M3 3v5h5"/></svg>
+            </div>
+            <div><div class="bdp-stat-label">Not Synced</div><div class="bdp-stat-number">{{ $counts['not_synced'] ?? 0 }}</div><div class="bdp-stat-note">Waiting for push</div></div>
+        </div>
+        <div class="bdp-stat-card">
+            <div class="bdp-stat-icon is-purple">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4"/><path d="M12 17h.01"/><circle cx="12" cy="12" r="10"/></svg>
+            </div>
+            <div><div class="bdp-stat-label">Needs Review</div><div class="bdp-stat-number">{{ $counts['needs_review'] ?? 0 }}</div><div class="bdp-stat-note">Missing data</div></div>
+        </div>
+        <div class="bdp-stat-card">
+            <div class="bdp-stat-icon is-red">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
+            </div>
+            <div><div class="bdp-stat-label">Failed</div><div class="bdp-stat-number">{{ $counts['failed'] ?? 0 }}</div><div class="bdp-stat-note">Need fixing</div></div>
+        </div>
+    </div>
+
+    <div class="bdp-card bdp-products-search-card" id="product-controls">
+        <div class="bdp-card-header">
+            <div>
+                <h3 class="bdp-card-title">Find & Filter Products</h3>
+                <p class="bdp-card-subtitle">Search products, filter by sync state, then select items for bulk actions.</p>
+
+                <div class="bdp-sync-settings-summary">
+                    <div class="summary-text">
+                        <strong>Sync settings locked:</strong>
+                        Mode: <strong>{{ ucfirst($bdpSyncDefault) }}</strong> ·
+                        Variation images: <strong>{{ $bdpCopyVariation ? 'Copy enabled' : 'Disabled' }}</strong> ·
+                        Parent/gallery: <strong>{{ $bdpParentSync ? 'Push enabled' : 'Manual upload' }}</strong>
+                    </div>
+                    <a href="{{ route('bdp.settings') }}" class="bdp-btn light">Manage in Settings</a>
+                </div>
+            </div>
+        </div>
+
+        <form method="GET" action="{{ route('bdp.products') }}" class="bdp-products-filter-grid">
+            <input type="hidden" name="sync" value="{{ $sync ?? 'all' }}">
+            <div>
+                <label>Search</label>
+                <input type="search" name="q" value="{{ $search ?? request('q') }}" placeholder="Product title, SKU, CJ SKU, source ID...">
+            </div>
+            <div>
+                <label>Status</label>
+                <select name="status">
+                    <option value="all" @selected(($status ?? 'all') === 'all')>All statuses</option>
+                    <option value="draft" @selected(($status ?? '') === 'draft')>Draft</option>
+                    <option value="published" @selected(($status ?? '') === 'published')>Published</option>
+                    <option value="pending" @selected(($status ?? '') === 'pending')>Pending</option>
+                </select>
+            </div>
+            <div>
+                <label>Category contains</label>
+                <input type="text" name="category" value="{{ $category ?? request('category') }}" placeholder="Sneakers, Pumps...">
+            </div>
+            <div>
+                <label>Per page</label>
+                <select name="per_page">
+                    @foreach([10,25,50,100] as $size)
+                        <option value="{{ $size }}" @selected((int)($perPage ?? 25) === $size)>{{ $size }}</option>
+                    @endforeach
+                </select>
+            </div>
+            <button class="bdp-btn orange" type="submit">Apply</button>
+            <a class="bdp-btn light" href="{{ route('bdp.products') }}">Reset</a>
+        </form>
+
+        <div class="bdp-toolbar" style="margin-top:16px;justify-content:space-between">
+            <div class="bdp-products-tools">
+                <button class="bdp-tool-toggle" type="button" data-product-tool="pricing-tools">Bulk Pricing Calculator</button>
+            </div>
+            <div class="bdp-compact-note">
+                <span class="bdp-pill muted">Tip</span>
+                Sync behavior is controlled in Settings. Select products below, then use Bulk Pricing Calculator to update prices safely.
+            </div>
+        </div>
+
+        <div class="bdp-selected-bar" id="bdp-selected-bar" style="display:none">
+            <strong><span id="bdp-selected-count">0</span> products selected</strong>
+            <div class="bdp-selected-actions">
+                <button class="bdp-btn orange" type="submit" form="bdp-products-form" formaction="{{ route('bdp.push') }}" formmethod="post">Sync Selected</button>
+                <button class="bdp-btn light" type="submit" form="bdp-products-form" formaction="{{ route('bdp.export') }}" formmethod="post">Export CSV</button>
+                <button class="bdp-btn light" type="submit" form="bdp-products-form" formaction="{{ route('bdp.bulk.edit') }}" formmethod="post">Bulk SEO Edit</button>
+                <button class="bdp-btn danger-light" type="button" id="bdp-clear-selection">Clear</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="bdp-tool-panel" id="pricing-tools">
+        <div class="bdp-card" id="bulk-pricing">
+            <div class="bdp-card-header">
+                <div>
+                    <h3 class="bdp-card-title">Bulk Pricing Calculator</h3>
+                    <p class="bdp-card-subtitle">Select products from the list, then calculate/update their Data Pilot prices using CJ cost + shipping + margin. Products are not changed on Balenco until you sync them.</p>
+                </div>
+                <button class="bdp-btn light" type="button" data-close-tool="pricing-tools">Close</button>
+            </div>
+            <div class="bdp-alert" style="background:#eff6ff;border-color:#bfdbfe;color:#1e3a8a;margin-top:12px">
+                <strong>Bulk price update:</strong> This updates selected products in Data Pilot only. Select products in the table first, choose margin rules here, then click Calculate Price. After review, sync selected products to Balenco as draft.
+            </div>
+            <div class="bdp-form-grid" style="margin-top:14px">
+                <div>
+                    <label>Destination country</label>
+                    <select form="bdp-products-form" name="country_code">
+                        <option value="US" selected>United States (US)</option>
+                        <option value="GB">United Kingdom (GB)</option>
+                        <option value="CA">Canada (CA)</option>
+                        <option value="AU">Australia (AU)</option>
+                        <option value="DE">Germany (DE)</option>
+                        <option value="FR">France (FR)</option>
+                    </select>
+                </div>
+                <div>
+                    <label>Quantity for shipping</label>
+                    <input form="bdp-products-form" type="number" name="quantity" value="1" min="1" max="100">
+                </div>
+                <div>
+                    <label>Margin type</label>
+                    <select form="bdp-products-form" name="margin_type">
+                        <option value="fixed" selected>Fixed amount</option>
+                        <option value="percent">Percentage markup</option>
+                    </select>
+                </div>
+                <div>
+                    <label>Margin value</label>
+                    <input form="bdp-products-form" type="number" name="margin_value" value="20" step="0.01" min="0">
+                </div>
+                <div>
+                    <label>Minimum selling price</label>
+                    <input form="bdp-products-form" type="number" name="minimum_price" value="39.99" step="0.01" min="0">
+                </div>
+                <div>
+                    <label>Retail rounding</label>
+                    <select form="bdp-products-form" name="round_mode">
+                        <option value="99" selected>Round up to .99</option>
+                        <option value="95">Round up to .95</option>
+                        <option value="00">Round up to whole dollar</option>
+                        <option value="none">No rounding</option>
+                    </select>
+                </div>
+            </div>
+            <label style="display:flex;align-items:center;gap:8px;margin-top:14px;font-weight:650">
+                <input form="bdp-products-form" class="bdp-checkbox" type="checkbox" name="refresh_shipping" value="1" checked style="width:auto">
+                Refresh CJ inventory + product shipping first if needed.
+            </label>
+            <div style="margin-top:14px">
+                <button class="bdp-btn orange" type="submit" form="bdp-products-form" formaction="{{ route('bdp.bulk.pricing') }}" formmethod="post">Calculate Price</button>
+            </div>
+        </div>
+    </div>
+
+    <form id="bdp-products-form" method="post">
+        @csrf
+        <input type="hidden" name="sync_status" value="{{ $bdpSyncDefault ?: 'draft' }}">
+        @if($bdpCopyVariation)
+            <input type="hidden" name="copy_variation_images" value="1">
+        @endif
+
+        <div class="bdp-card">
+            <div class="bdp-card-header">
+                <div>
+                    <h3 class="bdp-card-title">Product List</h3>
+                    <p class="bdp-card-subtitle">Showing {{ $products->firstItem() ?? 0 }} to {{ $products->lastItem() ?? 0 }} of {{ $products->total() }} products</p>
+                </div>
+                <div class="bdp-list-header-actions">
+                    <button type="button" class="bdp-btn light" id="bdp-select-visible">Select visible</button>
+                    <button type="button" class="bdp-btn light" id="bdp-unselect-visible">Clear</button>
+                </div>
+            </div>
+
+            <div class="bdp-product-list-tabs">
+                @foreach($tabs as $key => $label)
+                    <a href="{{ route('bdp.products', array_merge(request()->except('page'), ['sync' => $key])) }}" class="bdp-btn {{ ($sync ?? 'all') === $key ? 'orange' : 'light' }}">{{ $label }} ({{ $counts[$key] ?? 0 }})</a>
+                @endforeach
+            </div>
+
+            <div class="bdp-table-wrap">
+                <table class="bdp-table bdp-products-table">
+                    <thead>
+                        <tr>
+                            <th><input class="bdp-checkbox" type="checkbox" id="bdp-check-all"></th>
+                            <th>Product</th>
+                            <th>SKU</th>
+                            <th>Vars</th>
+                            <th>CJ Cost</th>
+                            <th>Shipping</th>
+                            <th>Landed</th>
+                            <th>Selling</th>
+                            <th>Stock</th>
+                            <th>Status</th>
+                            <th>Balenco Sync</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @forelse($products as $product)
+                        @php($displayCost = $product->min_variation_cost ?: $product->cost_per_item ?: $product->min_variation_price ?: $product->price)
+                        <tr>
+                            <td><input class="bdp-checkbox bdp-product-select" type="checkbox" name="products[]" value="{{ $product->id }}"></td>
+                            <td>
+                                <div class="bdp-product-cell">
+                                    <div class="bdp-product-thumb-wrap">
+                                        @if($product->featured_image)
+                                            <img class="bdp-thumb" src="{{ $product->featured_image }}" alt="">
+                                        @else
+                                            <div class="bdp-thumb"></div>
+                                        @endif
+                                    </div>
+                                    <div>
+                                        <div class="bdp-product-title">{{ $product->name }}</div>
+                                        <div class="bdp-product-meta">{{ $product->categories ?: 'No category' }}</div>
+                                    </div>
+                                </div>
+                            </td>
+                            <td>{{ $product->sku ?: '—' }}</td>
+                            <td>{{ $product->variations_count }}</td>
+                            <td>{{ $displayCost !== null && $displayCost !== '' ? '$' . number_format((float) $displayCost, 2) : '—' }}</td>
+                            <td>
+                                @if($product->cj_shipping_fee !== null)
+                                    <strong>${{ number_format((float)$product->cj_shipping_fee, 2) }}</strong>
+                                    @if($product->cj_shipping_country)<br><small>{{ $product->cj_shipping_country }}</small>@endif
+                                    @if($product->cj_shipping_method)<br><small>{{ \Illuminate\Support\Str::limit($product->cj_shipping_method, 24) }}</small>@endif
+                                @else
+                                    <span class="bdp-pill muted">Refresh CJ</span>
+                                @endif
+                            </td>
+                            <td>{{ $product->landed_cost !== null ? '$' . number_format((float) $product->landed_cost, 2) : '—' }}</td>
+                            <td>{{ $product->price !== null && $product->price !== '' ? '$' . number_format((float) $product->price, 2) : '—' }}</td>
+                            <td>{{ $product->variations_total_quantity !== null ? number_format((int)$product->variations_total_quantity) : '—' }}</td>
+                            <td><span class="bdp-pill {{ $product->status === 'published' ? 'success' : 'muted' }}">{{ $product->status }}</span></td>
+                            <td>
+                                @if($product->balenco_sync_status === 'sync_failed')
+                                    <span class="bdp-pill danger">Sync Failed</span><br>
+                                    <small>{{ \Illuminate\Support\Str::limit($product->balenco_sync_message ?: $product->shofy_push_note, 80) }}</small>
+                                @elseif(!empty($product->shofy_product_id))
+                                    <span class="bdp-pill success">{{ $product->balenco_sync_status === 'updated_in_balenco' ? 'Updated' : 'Synced' }}</span><br>
+                                    <small>Balenco ID: {{ $product->shofy_product_id }}</small><br>
+                                    <small>{{ optional($product->balenco_synced_at ?: $product->shofy_pushed_at)->format('Y-m-d H:i') }}</small><br>
+                                    @if(!is_null($product->shofy_variations_count))
+                                        <small>{{ $product->shofy_variations_count }} variations synced</small>
+                                    @endif
+                                @else
+                                    <span class="bdp-pill muted">Not Synced</span>
+                                @endif
+                            </td>
+                            <td>
+                                <div class="bdp-row-actions">
+                                    <a class="bdp-btn light" href="{{ route('bdp.products.edit', $product) }}">Edit</a>
+                                </div>
+                            </td>
+                        </tr>
+                    @empty
+                        <tr>
+                            <td colspan="12">
+                                <div class="bdp-empty-products">
+                                    <h3>No products found</h3>
+                                    <p>Try changing filters or import products from CJ.</p>
+                                    <a class="bdp-btn orange" href="{{ route('bdp.cj.import') }}">Import from CJ</a>
+                                </div>
+                            </td>
+                        </tr>
+                    @endforelse
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="bdp-table-footer">
+                <div class="bdp-compact-note">Recommended Balenco rule: landed cost + $20 margin, rounded to .99, minimum $39.99.</div>
+                <div class="bdp-page-links">{{ $products->links() }}</div>
+            </div>
+        </div>
+    </form>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const panels = document.querySelectorAll('.bdp-tool-panel');
+    const toggles = document.querySelectorAll('[data-product-tool]');
+    const storageKey = 'bdp-products-open-tool';
+
+    function openPanel(id) {
+        panels.forEach(panel => panel.classList.toggle('is-open', panel.id === id));
+        toggles.forEach(btn => btn.classList.toggle('active', btn.dataset.productTool === id));
+        if (id) {
+            localStorage.setItem(storageKey, id);
+        } else {
+            localStorage.removeItem(storageKey);
+        }
+    }
+
+    toggles.forEach(btn => btn.addEventListener('click', () => {
+        const panel = document.getElementById(btn.dataset.productTool);
+        openPanel(panel && panel.classList.contains('is-open') ? null : btn.dataset.productTool);
+    }));
+
+    document.querySelectorAll('[data-close-tool]').forEach(btn => btn.addEventListener('click', () => openPanel(null)));
+
+    const saved = localStorage.getItem(storageKey);
+    if (saved && document.getElementById(saved)) {
+        openPanel(saved);
+    }
+
+    const selects = Array.from(document.querySelectorAll('.bdp-product-select'));
+    const checkAll = document.getElementById('bdp-check-all');
+    const selectedBar = document.getElementById('bdp-selected-bar');
+    const selectedCount = document.getElementById('bdp-selected-count');
+
+    function updateSelected() {
+        const count = selects.filter(cb => cb.checked).length;
+        selectedCount.textContent = count;
+        selectedBar.style.display = count > 0 ? 'flex' : 'none';
+        if (checkAll) {
+            checkAll.checked = count > 0 && count === selects.length;
+        }
+    }
+
+    selects.forEach(cb => cb.addEventListener('change', updateSelected));
+
+    if (checkAll) {
+        checkAll.addEventListener('change', () => {
+            selects.forEach(cb => cb.checked = checkAll.checked);
+            updateSelected();
+        });
+    }
+
+    const selectVisible = document.getElementById('bdp-select-visible');
+    const unselectVisible = document.getElementById('bdp-unselect-visible');
+    const clearSelection = document.getElementById('bdp-clear-selection');
+
+    if (selectVisible) {
+        selectVisible.addEventListener('click', () => {
+            selects.forEach(cb => cb.checked = true);
+            updateSelected();
+        });
+    }
+
+    if (unselectVisible) {
+        unselectVisible.addEventListener('click', () => {
+            selects.forEach(cb => cb.checked = false);
+            updateSelected();
+        });
+    }
+
+    if (clearSelection) {
+        clearSelection.addEventListener('click', () => {
+            selects.forEach(cb => cb.checked = false);
+            updateSelected();
+        });
+    }
+
+    updateSelected();
+});
+</script>
+@endsection

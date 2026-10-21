@@ -1,0 +1,137 @@
+@extends('balenco-data-pilot.layout')
+
+@section('content')
+<style>
+.bdp-queue-wrap{max-width:1280px;margin:0 auto;padding:8px 0 32px}
+.bdp-queue-head{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:18px}
+.bdp-queue-title h1{font-size:28px;line-height:1.1;margin:0 0 6px;color:#0f172a;font-weight:900}
+.bdp-queue-title p{margin:0;color:#64748b;font-size:14px}
+.bdp-queue-actions{display:flex;gap:10px;align-items:center}
+.bdp-btn{display:inline-flex;align-items:center;justify-content:center;border:1px solid #e2e8f0;background:#fff;color:#0f172a;border-radius:10px;padding:10px 14px;font-weight:800;font-size:13px;text-decoration:none;cursor:pointer}
+.bdp-btn.primary{background:#ff5b1a;border-color:#ff5b1a;color:#fff}
+.bdp-cards{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:14px;margin-bottom:18px}
+.bdp-card{background:#fff;border:1px solid #e5e7eb;border-radius:16px;padding:16px;box-shadow:0 10px 30px rgba(15,23,42,.04)}
+.bdp-card span{display:block;font-size:12px;color:#64748b;font-weight:800;text-transform:uppercase;letter-spacing:.04em}
+.bdp-card strong{display:block;margin-top:8px;font-size:26px;color:#0f172a;font-weight:900}
+.bdp-panel{background:#fff;border:1px solid #e5e7eb;border-radius:18px;box-shadow:0 12px 34px rgba(15,23,42,.05);overflow:hidden}
+.bdp-filter{display:flex;align-items:end;gap:10px;padding:16px;border-bottom:1px solid #edf2f7}
+.bdp-field{display:flex;flex-direction:column;gap:6px}
+.bdp-field label{font-size:12px;color:#475569;font-weight:800}
+.bdp-field input,.bdp-field select{height:40px;border:1px solid #dbe3ef;border-radius:10px;padding:0 12px;background:#fff;min-width:210px}
+.bdp-table{width:100%;border-collapse:collapse}
+.bdp-table th{background:#f8fafc;color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:.04em;text-align:left;padding:12px;border-bottom:1px solid #e5e7eb}
+.bdp-table td{padding:13px 12px;border-bottom:1px solid #edf2f7;vertical-align:top;font-size:13px;color:#0f172a}
+.bdp-product-name{font-weight:900;color:#0f172a;margin-bottom:4px}
+.bdp-muted{color:#64748b;font-size:12px}
+.bdp-status{display:inline-flex;align-items:center;border-radius:999px;padding:5px 9px;font-size:11px;font-weight:900;text-transform:uppercase}
+.bdp-status.queued{background:#eff6ff;color:#1d4ed8}
+.bdp-status.processing{background:#fff7ed;color:#c2410c}
+.bdp-status.synced{background:#dcfce7;color:#166534}
+.bdp-status.failed{background:#fee2e2;color:#b91c1c}
+.bdp-error{max-width:420px;color:#b91c1c;font-size:12px;line-height:1.4;white-space:normal}
+.bdp-pagination{padding:14px 16px}
+@media(max-width:980px){.bdp-cards{grid-template-columns:repeat(2,minmax(0,1fr))}.bdp-filter{flex-wrap:wrap}.bdp-table{min-width:980px}.bdp-panel{overflow-x:auto}}
+</style>
+
+<div class="bdp-queue-wrap">
+    <div class="bdp-queue-head">
+        <div class="bdp-queue-title">
+            <h1>Sync Queue</h1>
+            <p>Products added here are synced by cron one by one. Variation images are copied to store.balencousa.com during sync.</p>
+        </div>
+        <div class="bdp-queue-actions">
+            <a class="bdp-btn" href="{{ route('bdp.products') }}">Back to Products</a>
+        </div>
+    </div>
+
+    <div class="bdp-cards">
+        <a class="bdp-card" href="{{ route('bdp.sync.queue.index', ['status' => 'all']) }}" style="text-decoration:none">
+            <span>All</span>
+            <strong>{{ $counts['all'] ?? 0 }}</strong>
+        </a>
+        <a class="bdp-card" href="{{ route('bdp.sync.queue.index', ['status' => 'queued']) }}" style="text-decoration:none">
+            <span>Queued</span>
+            <strong>{{ $counts['queued'] ?? 0 }}</strong>
+        </a>
+        <a class="bdp-card" href="{{ route('bdp.sync.queue.index', ['status' => 'processing']) }}" style="text-decoration:none">
+            <span>Processing</span>
+            <strong>{{ $counts['processing'] ?? 0 }}</strong>
+        </a>
+        <a class="bdp-card" href="{{ route('bdp.sync.queue.index', ['status' => 'synced']) }}" style="text-decoration:none">
+            <span>Synced</span>
+            <strong>{{ $counts['synced'] ?? 0 }}</strong>
+        </a>
+        <a class="bdp-card" href="{{ route('bdp.sync.queue.index', ['status' => 'failed']) }}" style="text-decoration:none">
+            <span>Failed</span>
+            <strong>{{ $counts['failed'] ?? 0 }}</strong>
+        </a>
+    </div>
+
+    <div class="bdp-panel">
+        <form method="get" action="{{ route('bdp.sync.queue.index') }}" class="bdp-filter">
+            <div class="bdp-field">
+                <label>Status</label>
+                <select name="status">
+                    <option value="all" @selected(($status ?? 'all') === 'all')>All</option>
+                    <option value="queued" @selected(($status ?? '') === 'queued')>Queued</option>
+                    <option value="processing" @selected(($status ?? '') === 'processing')>Processing</option>
+                    <option value="synced" @selected(($status ?? '') === 'synced')>Synced</option>
+                    <option value="failed" @selected(($status ?? '') === 'failed')>Failed</option>
+                </select>
+            </div>
+            <div class="bdp-field" style="flex:1">
+                <label>Search</label>
+                <input type="text" name="search" value="{{ $search ?? '' }}" placeholder="Product title, SKU, or Data Pilot ID">
+            </div>
+            <button class="bdp-btn primary" type="submit">Filter</button>
+            <a class="bdp-btn" href="{{ route('bdp.sync.queue.index') }}">Reset</a>
+        </form>
+
+        <table class="bdp-table">
+            <thead>
+                <tr>
+                    <th>Product</th>
+                    <th>SKU</th>
+                    <th>Status</th>
+                    <th>Attempts</th>
+                    <th>Queued</th>
+                    <th>Started</th>
+                    <th>Synced</th>
+                    <th>Last Error / Note</th>
+                </tr>
+            </thead>
+            <tbody>
+                @forelse($items as $item)
+                    <tr>
+                        <td>
+                            <div class="bdp-product-name">{{ $item->product_name ?: 'Product #' . $item->product_id }}</div>
+                            <div class="bdp-muted">Data Pilot ID: {{ $item->product_id }} @if($item->shofy_product_id) · Shofy ID: {{ $item->shofy_product_id }} @endif</div>
+                        </td>
+                        <td>{{ $item->sku ?: '—' }}</td>
+                        <td><span class="bdp-status {{ $item->status }}">{{ $item->status }}</span></td>
+                        <td>{{ $item->attempts }}</td>
+                        <td><span class="bdp-muted">{{ $item->queued_at ?: '—' }}</span></td>
+                        <td><span class="bdp-muted">{{ $item->started_at ?: '—' }}</span></td>
+                        <td><span class="bdp-muted">{{ $item->synced_at ?: '—' }}</span></td>
+                        <td>
+                            @if($item->last_error)
+                                <div class="bdp-error">{{ $item->last_error }}</div>
+                            @else
+                                <div class="bdp-muted">{{ \Illuminate\Support\Str::limit((string) $item->shofy_push_note, 160) ?: '—' }}</div>
+                            @endif
+                        </td>
+                    </tr>
+                @empty
+                    <tr>
+                        <td colspan="8" style="text-align:center;padding:30px;color:#64748b">No queue items found.</td>
+                    </tr>
+                @endforelse
+            </tbody>
+        </table>
+
+        <div class="bdp-pagination">
+            {{ $items->links() }}
+        </div>
+    </div>
+</div>
+@endsection

@@ -1,0 +1,481 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\BdpBalencoCategory;
+use App\Models\BdpSetting;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
+
+class BdpSettingsController extends Controller
+{
+    public function index()
+    {
+        $settings = [
+            'default_sync_status' => BdpSetting::getValue('default_sync_status', 'draft'),
+            'copy_variation_images' => BdpSetting::getValue('copy_variation_images', '1'),
+            'parent_image_sync' => BdpSetting::getValue('parent_image_sync', '0'),
+            'gallery_image_sync' => BdpSetting::getValue('gallery_image_sync', '0'),
+            'default_shipping_country' => BdpSetting::getValue('default_shipping_country', 'US'),
+            'default_margin_type' => BdpSetting::getValue('default_margin_type', 'fixed'),
+            'default_margin_value' => BdpSetting::getValue('default_margin_value', '20'),
+            'minimum_selling_price' => BdpSetting::getValue('minimum_selling_price', '39.99'),
+            'retail_rounding' => BdpSetting::getValue('retail_rounding', 'up_99'),
+            'balenco_category_connection' => BdpSetting::getValue('balenco_category_connection', env('SHOFY_DB_CONNECTION', 'mysql')),
+        ];
+
+        $categories = BdpBalencoCategory::query()
+            ->orderByRaw('COALESCE(path, name) asc')
+            ->limit(300)
+            ->get();
+
+        return view('balenco-data-pilot.settings', compact('settings', 'categories'));
+    }
+
+    public function update(Request $request)
+    {
+
+        // BDP_STORE_CONNECTION_METHODS_SAVE_START
+        $storeConnectionKeys = [
+            'store_push_method',
+            'store_db_host',
+            'store_db_port',
+            'store_db_database',
+            'store_db_username',
+            'store_db_prefix',
+            'store_api_endpoint',
+        ];
+
+        foreach ($storeConnectionKeys as $key) {
+            if ($request->has($key)) {
+                \App\Models\BdpSetting::setValue($key, $request->input($key));
+            }
+        }
+
+        if ($request->filled('store_db_password')) {
+            \App\Models\BdpSetting::setValue('store_db_password', encrypt($request->input('store_db_password')));
+        }
+
+        if ($request->filled('store_api_secret')) {
+            \App\Models\BdpSetting::setValue('store_api_secret', encrypt($request->input('store_api_secret')));
+        }
+        // BDP_STORE_CONNECTION_METHODS_SAVE_END
+
+        $data = $request->validate([
+            'default_sync_status' => ['required', 'in:draft,published'],
+            'copy_variation_images' => ['nullable', 'boolean'],
+            'parent_image_sync' => ['nullable', 'boolean'],
+            'gallery_image_sync' => ['nullable', 'boolean'],
+            'default_shipping_country' => ['nullable', 'string', 'max:10'],
+            'default_margin_type' => ['required', 'in:fixed,percentage'],
+            'default_margin_value' => ['nullable', 'numeric', 'min:0'],
+            'minimum_selling_price' => ['nullable', 'numeric', 'min:0'],
+            'retail_rounding' => ['required', 'in:up_99,nearest_99,none'],
+            'balenco_category_connection' => ['nullable', 'string', 'max:80'],
+        ]);
+
+        foreach (['copy_variation_images', 'parent_image_sync', 'gallery_image_sync'] as $boolKey) {
+            $data[$boolKey] = $request->boolean($boolKey) ? '1' : '0';
+        }
+
+        foreach ($data as $key => $value) {
+            BdpSetting::setValue($key, $value);
+        }
+
+        
+        // BDP_AI_PROMPT_SETTINGS_SAVE_START
+        foreach ([
+            'ai_short_words' => '40-60',
+            'ai_long_words' => '180-230',
+            'ai_meta_chars' => '150-160',
+            'ai_tags_count' => '6',
+            'ai_default_buyer_intent' => 'Everyday wear',
+        ] as $bdpAiKey => $bdpAiDefault) {
+            $bdpAiValue = $request->input($bdpAiKey, $bdpAiDefault);
+
+            if (class_exists(\App\Models\BdpSetting::class)) {
+                if (method_exists(\App\Models\BdpSetting::class, 'setValue')) {
+                    \App\Models\BdpSetting::setValue($bdpAiKey, $bdpAiValue);
+                } elseif (method_exists(\App\Models\BdpSetting::class, 'set')) {
+                    \App\Models\BdpSetting::set($bdpAiKey, $bdpAiValue);
+                } else {
+                    \App\Models\BdpSetting::query()->updateOrCreate(['key' => $bdpAiKey], ['value' => $bdpAiValue]);
+                }
+            }
+        }
+        // BDP_AI_PROMPT_SETTINGS_SAVE_END
+
+        // BDP_CONNECTED_STORE_SAVE_START
+        // Save connected store settings used as the product push target.
+        $bdpSaveSetting = function (string $key, $value): void {
+            $value = is_null($value) ? '' : (string) $value;
+
+            if (class_exists(\App\Models\BdpSetting::class)) {
+                if (method_exists(\App\Models\BdpSetting::class, 'setValue')) {
+                    \App\Models\BdpSetting::setValue($key, $value);
+                    return;
+                }
+
+                if (method_exists(\App\Models\BdpSetting::class, 'set')) {
+                    \App\Models\BdpSetting::set($key, $value);
+                    return;
+                }
+
+                \App\Models\BdpSetting::query()->updateOrCreate(['key' => $key], ['value' => $value]);
+            }
+        };
+
+        $bdpConnectedDomain = trim((string) $request->input('connected_store_domain', ''));
+        $bdpConnectedDomain = preg_replace('/\s+/', '', $bdpConnectedDomain);
+        $bdpConnectedDomain = preg_replace('#^https?://#i', '', $bdpConnectedDomain);
+        $bdpConnectedDomain = rtrim($bdpConnectedDomain, '/');
+
+        $bdpConnectedApiUrl = trim((string) $request->input('connected_store_api_url', ''));
+        $bdpConnectedApiUrl = rtrim($bdpConnectedApiUrl, '/');
+
+        $bdpSaveSetting('connected_store_enabled', $request->input('connected_store_enabled', '1') === '1' ? '1' : '0');
+        $bdpSaveSetting('connected_store_name', trim((string) $request->input('connected_store_name', '')));
+        $bdpSaveSetting('connected_store_domain', $bdpConnectedDomain);
+        $bdpSaveSetting('connected_store_api_url', $bdpConnectedApiUrl);
+        // BDP_CONNECTED_STORE_SAVE_END
+
+
+return redirect()->route('bdp.settings')->with('status', 'Settings saved successfully.');
+    }
+
+    public function fetchBalencoCategories(Request $request)
+    {
+        $connection = BdpSetting::getValue('balenco_category_connection', env('SHOFY_DB_CONNECTION', 'mysql'));
+
+        try {
+            $query = DB::connection($connection)->table('ec_product_categories');
+
+            $columns = Schema::connection($connection)->getColumnListing('ec_product_categories');
+
+            $rows = $query->select('*')->orderBy('parent_id')->orderBy('name')->get();
+
+            $byId = $rows->keyBy('id');
+            $saved = 0;
+
+            foreach ($rows as $row) {
+                $path = $this->buildCategoryPath($row, $byId);
+
+                BdpBalencoCategory::query()->updateOrCreate(
+                    ['balenco_category_id' => $row->id],
+                    [
+                        'parent_id' => $row->parent_id ?? null,
+                        'name' => $row->name ?? ('Category '.$row->id),
+                        'path' => $path,
+                        'status' => property_exists($row, 'status') ? $row->status : null,
+                        'raw_json' => json_decode(json_encode($row), true),
+                    ]
+                );
+
+                $saved++;
+            }
+
+            BdpSetting::setValue('balenco_categories_last_fetch_at', now()->toDateTimeString());
+
+            return redirect()->route('bdp.settings')->with('status', "Fetched {$saved} Balenco categories.");
+        } catch (\Throwable $e) {
+            return redirect()->route('bdp.settings')->with('error', 'Could not fetch Balenco categories: '.$e->getMessage());
+        }
+    }
+
+    private function buildCategoryPath($row, $byId): string
+    {
+        $parts = [];
+        $current = $row;
+        $guard = 0;
+
+        while ($current && $guard < 20) {
+            array_unshift($parts, $current->name ?? ('Category '.$current->id));
+            $parentId = $current->parent_id ?? null;
+            $current = $parentId && $byId->has($parentId) ? $byId->get($parentId) : null;
+            $guard++;
+        }
+
+        return implode(' > ', array_filter($parts));
+    }
+
+
+    public function testConnectedStore(\Illuminate\Http\Request $request)
+    {
+        $url = trim((string) ($request->input('store_api_base_url') ?: $request->input('store_domain')));
+
+        if ($url === '') {
+            return response()->json([
+                'ok' => false,
+                'message' => 'Please enter a store domain or store API/base URL first.',
+            ], 422);
+        }
+
+        if (!preg_match('/^https?:\/\//i', $url)) {
+            $url = 'https://' . $url;
+        }
+
+        $parts = parse_url($url);
+        if (!$parts || empty($parts['host'])) {
+            return response()->json([
+                'ok' => false,
+                'message' => 'Invalid store URL. Use a domain like example.com or a full URL like https://example.com.',
+            ], 422);
+        }
+
+        $baseUrl = ($parts['scheme'] ?? 'https') . '://' . $parts['host'] . (isset($parts['port']) ? ':' . $parts['port'] : '');
+        $testUrl = rtrim($baseUrl, '/');
+
+        try {
+            $response = \Illuminate\Support\Facades\Http::timeout(12)
+                ->withoutRedirecting()
+                ->withHeaders([
+                    'User-Agent' => 'Data Pilot Store Connection Test',
+                    'Accept' => 'text/html,application/json,*/*',
+                ])
+                ->get($testUrl);
+
+            $status = $response->status();
+            $ok = $status >= 200 && $status < 400;
+
+            if (!$ok && in_array($status, [301, 302, 303, 307, 308], true)) {
+                $ok = true;
+            }
+
+            if ($ok) {
+                return response()->json([
+                    'ok' => true,
+                    'message' => 'Connection successful. Store is reachable: ' . $testUrl . ' (HTTP ' . $status . ')',
+                    'status' => $status,
+                    'url' => $testUrl,
+                ]);
+            }
+
+            return response()->json([
+                'ok' => false,
+                'message' => 'Store responded, but not successfully. URL: ' . $testUrl . ' (HTTP ' . $status . ')',
+                'status' => $status,
+                'url' => $testUrl,
+            ], 422);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'ok' => false,
+                'message' => 'Connection failed for ' . $testUrl . '. ' . $e->getMessage(),
+                'url' => $testUrl,
+            ], 422);
+        }
+    }
+
+
+
+    // BDP_STORE_CONNECTION_METHODS_TEST_START
+    public function testStoreConnection(\Illuminate\Http\Request $request)
+    {
+        $method = $request->input('store_push_method', 'database');
+
+        try {
+            if ($method === 'api') {
+                $endpoint = trim((string) $request->input('store_api_endpoint'));
+                if ($endpoint === '') {
+                    return response()->json(['ok' => false, 'message' => 'API endpoint URL is required.'], 422);
+                }
+
+                $response = \Illuminate\Support\Facades\Http::timeout(12)
+                    ->withHeaders([
+                        'Accept' => 'application/json',
+                        'X-Data-Pilot-Test' => '1',
+                    ])
+                    ->get($endpoint);
+
+                if ($response->successful() || in_array($response->status(), [401, 403, 405], true)) {
+                    return response()->json([
+                        'ok' => true,
+                        'message' => 'API endpoint is reachable. HTTP status: ' . $response->status(),
+                    ]);
+                }
+
+                return response()->json([
+                    'ok' => false,
+                    'message' => 'API endpoint reached but returned HTTP status: ' . $response->status(),
+                ], 422);
+            }
+
+            $host = trim((string) $request->input('store_db_host'));
+            $database = trim((string) $request->input('store_db_database'));
+            $username = trim((string) $request->input('store_db_username'));
+            $password = (string) $request->input('store_db_password');
+
+            if ($password === '') {
+                $savedPassword = \App\Models\BdpSetting::getValue('store_db_password');
+                if ($savedPassword) {
+                    try {
+                        $password = decrypt($savedPassword);
+                    } catch (\Throwable $e) {
+                        $password = $savedPassword;
+                    }
+                }
+            }
+
+            if ($host === '' || $database === '' || $username === '') {
+                return response()->json([
+                    'ok' => false,
+                    'message' => 'Database host, database name, and username are required.',
+                ], 422);
+            }
+
+            $connectionName = 'bdp_store_test_' . substr(md5((string) microtime(true)), 0, 8);
+            config([
+                "database.connections.$connectionName" => [
+                    'driver' => 'mysql',
+                    'host' => $host,
+                    'port' => $request->input('store_db_port', '3306') ?: '3306',
+                    'database' => $database,
+                    'username' => $username,
+                    'password' => $password,
+                    'unix_socket' => env('DB_SOCKET', ''),
+                    'charset' => 'utf8mb4',
+                    'collation' => 'utf8mb4_unicode_ci',
+                    'prefix' => $request->input('store_db_prefix', '') ?: '',
+                    'prefix_indexes' => true,
+                    'strict' => false,
+                    'engine' => null,
+                    'options' => extension_loaded('pdo_mysql') ? array_filter([
+                        \PDO::MYSQL_ATTR_SSL_CA => env('MYSQL_ATTR_SSL_CA'),
+                    ]) : [],
+                ],
+            ]);
+
+            \Illuminate\Support\Facades\DB::purge($connectionName);
+            \Illuminate\Support\Facades\DB::connection($connectionName)->getPdo();
+
+            // Optional Botble table check. This confirms it is likely a Botble Ecommerce DB.
+            $prefix = $request->input('store_db_prefix', '') ?: '';
+            $productsTable = $prefix . 'ec_products';
+            $hasProductsTable = \Illuminate\Support\Facades\Schema::connection($connectionName)->hasTable($productsTable);
+
+            \Illuminate\Support\Facades\DB::disconnect($connectionName);
+
+            return response()->json([
+                'ok' => true,
+                'message' => $hasProductsTable
+                    ? 'Database connected successfully. Botble products table found.'
+                    : 'Database connected successfully, but ec_products table was not found. Check table prefix/database.',
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'ok' => false,
+                'message' => 'Connection failed: ' . $e->getMessage(),
+            ], 422);
+        }
+    }
+    // BDP_STORE_CONNECTION_METHODS_TEST_END
+
+    /**
+     * Test the connected store push connection.
+     * Supports Direct Database and API Receiver methods.
+     */
+    public function testConnection(\Illuminate\Http\Request $request)
+    {
+        $method = $request->input('store_push_method', $request->input('push_method', 'database'));
+        $method = in_array($method, ['database', 'direct_database', 'db'], true) ? 'database' : $method;
+        $method = in_array($method, ['api', 'api_receiver'], true) ? 'api' : $method;
+
+        if ($method === 'database') {
+            $host = trim((string) $request->input('store_db_host', $request->input('db_host', '')));
+            $port = trim((string) $request->input('store_db_port', $request->input('db_port', '3306')));
+            $database = trim((string) $request->input('store_db_database', $request->input('store_db_name', $request->input('db_database', ''))));
+            $username = trim((string) $request->input('store_db_username', $request->input('db_username', '')));
+            $password = (string) $request->input('store_db_password', $request->input('db_password', ''));
+            $prefix = (string) $request->input('store_db_prefix', $request->input('db_prefix', ''));
+
+            $missing = [];
+            if ($host === '') $missing[] = 'database host';
+            if ($port === '') $missing[] = 'database port';
+            if ($database === '') $missing[] = 'database name';
+            if ($username === '') $missing[] = 'database username';
+            if ($password === '') $missing[] = 'database password';
+
+            if (! empty($missing)) {
+                return back()->with('error', 'Please enter ' . implode(', ', $missing) . ' before testing the database connection.');
+            }
+
+            try {
+                \Illuminate\Support\Facades\Config::set('database.connections.bdp_test_store', [
+                    'driver' => 'mysql',
+                    'host' => $host,
+                    'port' => $port ?: 3306,
+                    'database' => $database,
+                    'username' => $username,
+                    'password' => $password,
+                    'unix_socket' => env('DB_SOCKET', ''),
+                    'charset' => 'utf8mb4',
+                    'collation' => 'utf8mb4_unicode_ci',
+                    'prefix' => $prefix,
+                    'prefix_indexes' => true,
+                    'strict' => false,
+                    'engine' => null,
+                    'options' => extension_loaded('pdo_mysql') ? array_filter([
+                        \PDO::MYSQL_ATTR_SSL_CA => env('MYSQL_ATTR_SSL_CA'),
+                    ]) : [],
+                ]);
+
+                \Illuminate\Support\Facades\DB::purge('bdp_test_store');
+                \Illuminate\Support\Facades\DB::connection('bdp_test_store')->getPdo();
+
+                $requiredTables = ['ec_products'];
+                $missingTables = [];
+
+                foreach ($requiredTables as $table) {
+                    if (! \Illuminate\Support\Facades\Schema::connection('bdp_test_store')->hasTable($table)) {
+                        $missingTables[] = $prefix . $table;
+                    }
+                }
+
+                if (! empty($missingTables)) {
+                    return back()->with('error', 'Database connected, but Botble ecommerce table was not found: ' . implode(', ', $missingTables) . '. Check database name or table prefix.');
+                }
+
+                return back()->with('success', 'Database connected successfully. Botble ecommerce tables detected.');
+            } catch (\Throwable $e) {
+                return back()->with('error', 'Database connection failed: ' . $e->getMessage());
+            }
+        }
+
+        if ($method === 'api') {
+            $apiUrl = trim((string) $request->input('store_api_url', $request->input('store_api_base_url', $request->input('api_url', ''))));
+            $secret = (string) $request->input('store_api_secret', $request->input('api_secret', ''));
+
+            if ($apiUrl === '') {
+                return back()->with('error', 'Please enter the API receiver endpoint URL before testing the API connection.');
+            }
+
+            if ($secret === '') {
+                return back()->with('error', 'Please enter the API secret key before testing the API connection.');
+            }
+
+            try {
+                $pingUrl = rtrim($apiUrl, '/');
+                if (! str_ends_with($pingUrl, '/data-pilot/ping')) {
+                    $pingUrl .= '/data-pilot/ping';
+                }
+
+                $response = \Illuminate\Support\Facades\Http::withHeaders([
+                    'X-Data-Pilot-Secret' => $secret,
+                    'Accept' => 'application/json',
+                ])->timeout(15)->get($pingUrl);
+
+                if ($response->successful()) {
+                    return back()->with('success', 'API receiver connected successfully.');
+                }
+
+                return back()->with('error', 'API receiver responded with HTTP status ' . $response->status() . '.');
+            } catch (\Throwable $e) {
+                return back()->with('error', 'API connection failed: ' . $e->getMessage());
+            }
+        }
+
+        return back()->with('error', 'Invalid push method selected.');
+    }
+
+}

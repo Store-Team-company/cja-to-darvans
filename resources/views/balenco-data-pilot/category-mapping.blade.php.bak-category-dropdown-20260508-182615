@@ -1,0 +1,61 @@
+@extends('balenco-data-pilot.layout')
+
+@section('content')
+<div class="card">
+    <h2>Category Mapping</h2>
+    <p>Map imported WooCommerce/CJA categories to your real Balenco categories. During sync, Data Pilot will attach the product to the mapped Balenco category.</p>
+    <p style="background:#eff6ff;border:1px solid #bfdbfe;padding:10px;border-radius:10px"><strong>Safe rule:</strong> if a source category is not mapped, Data Pilot will not change Balenco categories for that product.</p>
+</div>
+
+<form method="post" action="{{ route('bdp.categories.mapping.save') }}">
+    @csrf
+    <div class="card">
+        <table>
+            <thead>
+            <tr>
+                <th>Imported Category</th>
+                <th>Map to Balenco Category</th>
+                <th>Current Mapping</th>
+            </tr>
+            </thead>
+            <tbody>
+            @forelse($sourceCategories as $sourceCategory)
+                @php($mapping = $mappings[mb_strtolower($sourceCategory)] ?? null)
+                <tr>
+                    <td><strong>{{ $sourceCategory }}</strong></td>
+                    <td>
+                        <select name="mappings[{{ $sourceCategory }}]">
+                            <option value="">— Do not sync category —</option>
+                            @foreach($balencoCategories as $category)
+                                <option value="{{ $category['id'] }}" @selected(optional($mapping)->balenco_category_id == $category['id'])>
+                                    #{{ $category['id'] }} — {{ $category['name'] }}
+                                </option>
+                            @endforeach
+                        </select>
+                    </td>
+                    <td>
+                        @if($mapping && $mapping->balenco_category_id)
+                            <span style="display:inline-block;background:#dcfce7;color:#166534;border-radius:999px;padding:3px 8px;font-size:12px;font-weight:700">Mapped</span><br>
+                            <small>#{{ $mapping->balenco_category_id }} — {{ $mapping->balenco_category_name }}</small>
+                        @else
+                            <span style="display:inline-block;background:#f3f4f6;color:#374151;border-radius:999px;padding:3px 8px;font-size:12px;font-weight:700">Not mapped</span>
+                        @endif
+                    </td>
+                </tr>
+            @empty
+                <tr><td colspan="3">No imported categories found yet. Import products first.</td></tr>
+            @endforelse
+            </tbody>
+        </table>
+
+        @foreach($balencoCategories as $category)
+            <input type="hidden" name="category_names[{{ $category['id'] }}]" value="{{ $category['name'] }}">
+        @endforeach
+
+        <div style="margin-top:15px">
+            <button class="btn orange" type="submit">Save Category Mapping</button>
+            <a class="btn light" href="{{ route('bdp.index') }}">Back to Products</a>
+        </div>
+    </div>
+</form>
+@endsection

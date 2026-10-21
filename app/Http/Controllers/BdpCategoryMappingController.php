@@ -1,0 +1,166 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\BdpBalencoCategory;
+use App\Models\BdpCategoryMapping;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
+
+class BdpCategoryMappingController extends Controller
+{
+    public function index(Request $request)
+    {
+        $balencoCategories = $this->balencoCategories();
+        $mappings = Schema::hasTable('bdp_category_mappings') ? BdpCategoryMapping::orderBy('source_category')->get() : collect();
+        $sourceCategories = $this->sourceCategories();
+
+        return view('balenco-data-pilot.category-mapping', compact('balencoCategories', 'mappings', 'sourceCategories'));
+    }
+
+    public function store(Request $request)
+    {
+        $data = $request->validate([
+            'source_category' => ['required', 'string', 'max:500'],
+            'balenco_category_id' => ['required'],
+            'notes' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        $category = $this->balencoCategories()->firstWhere('balenco_category_id', (string) $data['balenco_category_id']);
+
+        if (! $category) {
+            return back()->with('error', 'Selected Balenco category was not found. Please fetch categories again.');
+        }
+
+        BdpCategoryMapping::updateOrCreate(
+            ['source_category' => trim($data['source_category'])],
+            [
+                'balenco_category_id' => $category->balenco_category_id,
+                'balenco_category_name' => $category->name,
+                'balenco_category_path' => $category->path ?: $category->name,
+                'notes' => $data['notes'] ?? null,
+            ]
+        );
+
+        return back()->with('success', 'Category mapping saved.');
+    }
+
+    public function autoMap(Request $request)
+    {
+        $balencoCategories = $this->balencoCategories();
+        $created = 0;
+
+        foreach ($this->sourceCategories() as $sourceCategory) {
+            if (BdpCategoryMapping::where('source_category', $sourceCategory)->exists()) {
+                continue;
+            }
+
+            $sourceLast = Str::of($sourceCategory)->replace(['>', '/', '&'], ' ')->lower()->squish()->explode(' ')->filter()->last();
+
+            $best = $balencoCategories->first(function ($cat) use ($sourceLast) {
+                $haystack = Str::of(($cat->path ?: $cat->name) . ' ' . $cat->name)->lower();
+                return $sourceLast && $haystack->contains((string) $sourceLast);
+            });
+
+            if ($best) {
+                BdpCategoryMapping::create([
+                    'source_category' => $sourceCategory,
+                    'balenco_category_id' => $best->balenco_category_id,
+                    'balenco_category_name' => $best->name,
+                    'balenco_category_path' => $best->path ?: $best->name,
+                    'notes' => 'Auto-mapped by similar category name.',
+                ]);
+                $created++;
+            }
+        }
+
+        return back()->with('success', "Auto-map complete. {$created} mappings created.");
+    }
+
+    public function fetchBalencoCategories(Request $request)
+    {
+        $connection = $request->input('connection') ?: $this->setting('balenco_db_connection') ?: $this->setting('shofy_db_connection') ?: config('database.default');
+
+        try {
+            $rows = DB::connection($connection)
+                ->table('ec_product_categories')
+                ->select(['id', 'name', 'parent_id', 'status'])
+                ->orderBy('parent_id')
+                ->orderBy('name')
+                ->get();
+
+            if ($rows->isEmpty()) {
+                return back()->with('error', 'No categories found in ec_product_categories.');
+            }
+
+            $byId = $rows->keyBy('id');
+
+            foreach ($rows as $row) {
+                $parts = [trim((string) $row->name)];
+                $parentId = $row->parent_id ?? null;
+                $guard = 0;
+
+                while ($parentId && $byId->has($parentId) && $guard < 20) {
+                    $parent = $byId->get($parentId);
+                    array_unshift($parts, trim((string) $parent->name));
+                    $parentId = $parent->parent_id ?? null;
+                    $guard++;
+                }
+
+                BdpBalencoCategory::updateOrCreate(
+                    ['balenco_category_id' => (string) $row->id],
+                    [
+                        'name' => $row->name,
+                        'path' => collect($parts)->filter()->implode(' > '),
+                        'parent_id' => $row->parent_id,
+                        'status' => $row->status ?? null,
+                        'raw_json' => json_encode($row),
+                    ]
+                );
+            }
+
+            return back()->with('success', 'Fetched '.$rows->count().' Balenco categories.');
+        } catch (\Throwable $e) {
+            return back()->with('error', 'Could not fetch Balenco categories: '.$e->getMessage());
+        }
+    }
+
+    private function balencoCategories()
+    {
+        if (! Schema::hasTable('bdp_balenco_categories')) {
+            return collect();
+        }
+
+        return BdpBalencoCategory::query()->orderBy('path')->orderBy('name')->get();
+    }
+
+    private function sourceCategories()
+    {
+        if (! Schema::hasTable('bdp_products')) {
+            return collect();
+        }
+
+        return DB::table('bdp_products')
+            ->whereNotNull('categories')
+            ->pluck('categories')
+            ->flatMap(fn ($value) => collect(explode(',', (string) $value))->map(fn ($item) => trim($item))->filter())
+            ->unique()
+            ->sort()
+            ->values();
+    }
+
+    private function setting(string $key, $default = null)
+    {
+        try {
+            if (Schema::hasTable('bdp_settings')) {
+                return DB::table('bdp_settings')->where('key', $key)->value('value') ?? $default;
+            }
+        } catch (\Throwable $e) {
+            return $default;
+        }
+
+        return $default;
+    }
+}
