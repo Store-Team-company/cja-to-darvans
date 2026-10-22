@@ -85,6 +85,42 @@ class SaasOtpMailDiagnosticsTest extends TestCase
         $this->assertGuest();
     }
 
+    public function test_failover_with_misconfigured_smtp_is_not_treated_as_deliverable(): void
+    {
+        $user = $this->customer();
+        config()->set('mail.default', 'failover');
+        config()->set('mail.mailers.failover.mailers', ['smtp']);
+        config()->set('mail.mailers.smtp.port', 587465);
+
+        $this->requestCode($user)
+            ->assertRedirect(route('saas.otp.verify.form'))
+            ->assertSessionHas('status');
+
+        Mail::assertNothingSent();
+        $this->assertDatabaseCount('saas_email_otp_challenges', 0);
+        $this->assertGuest();
+    }
+
+    public function test_successful_otp_authentication_regenerates_session(): void
+    {
+        $user = $this->customer();
+        $this->requestCode($user)->assertRedirect(route('saas.otp.verify.form'));
+        $code = '';
+        Mail::assertSent(SaasEmailOtpMail::class, function (SaasEmailOtpMail $mail) use (&$code): bool {
+            $code = $mail->code;
+
+            return true;
+        });
+        $this->assertMatchesRegularExpression('/^[0-9]{6}$/D', $code);
+        $sessionBefore = session()->getId();
+
+        $this->post(route('saas.otp.verify'), ['code' => $code])
+            ->assertRedirect(route('saas.home'));
+
+        $this->assertAuthenticatedAs($user);
+        $this->assertNotSame($sessionBefore, session()->getId());
+    }
+
     public function test_smtp_exception_is_safely_logged_and_does_not_500_or_create_session(): void
     {
         $user = $this->customer();
