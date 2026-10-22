@@ -191,42 +191,42 @@
         <div>
             <label>Push method</label>
             <select name="store_push_method" id="bdp-store-push-method">
-                <option value="database" @selected($bdpStorePushMethod === 'database')>Direct database connection</option>
+                <option value="database" @selected($bdpStorePushMethod === 'database')>Direct database (legacy single-store)</option>
                 <option value="api" @selected($bdpStorePushMethod === 'api')>API receiver endpoint</option>
             </select>
-            <div class="bdp-input-help">Use direct database if the target store DB is accessible. Use API if the store has a secure receiver endpoint.</div>
+            <div class="bdp-input-help">These are legacy single-store importer settings. For customer Botble stores use the SaaS workspace Connections page and the Data Pilot Botble Connector.</div>
         </div>
     </div>
 
     <div id="bdp-direct-db-settings" class="bdp-method-panel" style="margin-top:14px">
         <div class="bdp-alert" style="background:#eff6ff;border:1px solid #bfdbfe;color:#1e3a8a;padding:12px 14px;border-radius:12px;margin-bottom:14px">
-            Direct database push does not need a secret key in the target store .env file. It needs correct database access details.
+            Enter a MySQL hostname or IP address (e.g. localhost), NEVER a website URL such as https://sandbox.daystart.pk. Prefer the Botble Connector for customer stores.
         </div>
         <div class="bdp-form-grid">
             <div>
                 <label>Database host</label>
-                <input type="text" name="store_db_host" value="{{ e($bdpSettingValue('store_db_host')) }}"store_db_host', $settings['store_db_host'] ?? '') }}" placeholder="e.g. 127.0.0.1 or Cloudways DB host">
+                <input type="text" name="store_db_host" value="{{ e($bdpSettingValue('store_db_host')) }}" placeholder="MySQL hostname or IP only — no https://">
             </div>
             <div>
                 <label>Database port</label>
-                <input type="text" name="store_db_port" value="{{ e($bdpSettingValue('store_db_port', '3306')) }}"store_db_port', $settings['store_db_port'] ?? '3306') }}" placeholder="3306">
+                <input type="text" name="store_db_port" value="{{ e($bdpSettingValue('store_db_port', '3306')) }}" placeholder="3306">
             </div>
             <div>
                 <label>Database name</label>
-                <input type="text" name="store_db_database" value="{{ e($bdpSettingValue('store_db_database')) }}"store_db_database', $settings['store_db_database'] ?? '') }}" placeholder="Target store database name">
+                <input type="text" name="store_db_database" value="{{ e($bdpSettingValue('store_db_database')) }}" placeholder="Target store database name">
             </div>
             <div>
                 <label>Database username</label>
-                <input type="text" name="store_db_username" value="{{ e($bdpSettingValue('store_db_username')) }}"store_db_username', $settings['store_db_username'] ?? '') }}" placeholder="Target DB username">
+                <input type="text" name="store_db_username" value="{{ e($bdpSettingValue('store_db_username')) }}" placeholder="Target DB username">
             </div>
             <div>
                 <label>Database password</label>
-                <input type="password" name="store_db_password" value="{{ $bdpHasStoreDbPassword ? '********' : '' }}" placeholder="Leave blank to keep current password">
-                <div class="bdp-input-help">For security, saved password is not shown. Enter a new password only when changing it.</div>
+                <input type="password" name="store_db_password" value="" autocomplete="new-password" placeholder="Leave blank to keep current password">
+                <div class="bdp-input-help">{{ $bdpHasStoreDbPassword ? 'A password is saved. ' : '' }}Leave blank to keep your current password.</div>
             </div>
             <div>
                 <label>Table prefix optional</label>
-                <input type="text" name="store_db_prefix" value="{{ e($bdpSettingValue('store_db_prefix')) }}"store_db_prefix', $settings['store_db_prefix'] ?? '') }}" placeholder="e.g. abc_ or leave blank">
+                <input type="text" name="store_db_prefix" value="{{ e($bdpSettingValue('store_db_prefix')) }}" placeholder="e.g. abc_ or leave blank">
                 <div class="bdp-input-help">Use only if the target Botble tables have a custom prefix.</div>
             </div>
         </div>
@@ -234,16 +234,16 @@
 
     <div id="bdp-api-settings" class="bdp-method-panel" style="margin-top:14px;display:none">
         <div class="bdp-alert" style="background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;padding:12px 14px;border-radius:12px;margin-bottom:14px">
-            API receiver push needs a secure endpoint on the target store and a shared secret key.
+            This is a LEGACY API receiver, not the authenticated Data Pilot Botble Connector v0.2. Do not use it as a replacement for tenant-based connector pairing.
         </div>
         <div class="bdp-form-grid">
             <div>
                 <label>API receiver endpoint URL</label>
-                <input type="url" name="store_api_endpoint" value="{{ e($bdpSettingValue('store_api_endpoint')) }}"store_api_endpoint', $settings['store_api_endpoint'] ?? '') }}" placeholder="https://yourstore.com/data-pilot/receive-product">
+                <input type="url" name="store_api_endpoint" value="{{ e($bdpSettingValue('store_api_endpoint')) }}" placeholder="https://yourstore.com/data-pilot/receive-product">
             </div>
             <div>
                 <label>API secret key</label>
-                <input type="password" name="store_api_secret" value="{{ $bdpHasStoreApiSecret ? '********' : '' }}" placeholder="Leave blank to keep current secret">
+                <input type="password" name="store_api_secret" value="" autocomplete="new-password" placeholder="Leave blank to keep current secret">
                 <div class="bdp-input-help">The same secret must exist on the target store receiver configuration.</div>
             </div>
         </div>
@@ -262,19 +262,19 @@
     <div class="bdp-form-grid">
         <div class="bdp-store-name-field">
 <label>
-            <input type="text" name="connected_store_name" value="{{ e($bdpSettingValue('connected_store_name', 'Balenco Store')) }}"connected_store_name', $settings['connected_store_name'] ?? 'Balenco Store') }}" placeholder="e.g. Main Store">
+            <input type="text" name="connected_store_name" value="{{ e($bdpSettingValue('connected_store_name', 'Balenco Store')) }}" placeholder="e.g. Main Store">
             <div class="bdp-input-help">Internal label only. Example: Main Store, Balenco Live, Test Store.</div>
         </div>
 
         <div class="bdp-store-domain-field">
 <label>
-            <input type="text" name="connected_store_domain" value="{{ e($bdpSettingValue('connected_store_domain')) }}"connected_store_domain', $settings['connected_store_domain'] ?? '') }}" placeholder="e.g. balencousa.com">
+            <input type="text" name="connected_store_domain" value="{{ e($bdpSettingValue('connected_store_domain')) }}" placeholder="e.g. balencousa.com">
             <div class="bdp-input-help">Enter only the domain or full URL. Example: balencousa.com or https://balencousa.com</div>
         </div>
 
         <div>
             <label>Store admin/API base URL <span style="font-weight:500;color:#64748b">optional</span></label>
-            <input type="text" name="connected_store_api_url" value="{{ e($bdpSettingValue('connected_store_api_url')) }}"connected_store_api_url', $settings['connected_store_api_url'] ?? '') }}" placeholder="e.g. https://balencousa.com">
+            <input type="text" name="connected_store_api_url" value="{{ e($bdpSettingValue('connected_store_api_url')) }}" placeholder="e.g. https://balencousa.com">
             <div class="bdp-input-help">Optional. Use this later if product push needs a separate API URL.</div>
         </div>
 
@@ -667,8 +667,8 @@
                 alert('Settings form was not found.');
                 return;
             }
-            var base = appBaseUrl();
-            var target = base + path;
+            // Use Laravel's authenticated, named POST routes.
+            var target = path;
             if (btn) {
                 btn.disabled = true;
                 btn.dataset.originalText = btn.textContent;
@@ -688,14 +688,14 @@
         if (testBtn) {
             testBtn.addEventListener('click', function (event) {
                 event.preventDefault();
-                submitTo('/settings/test-connection', testBtn, 'Testing...');
+                submitTo(@json(route('bdp.settings.connection.test')), testBtn, 'Testing...');
             });
         }
 
         if (saveBtn) {
             saveBtn.addEventListener('click', function (event) {
                 event.preventDefault();
-                submitTo('/settings/connected-store/save', saveBtn, 'Saving...');
+                submitTo(@json(route('bdp.settings.store.save')), saveBtn, 'Saving...');
             });
         }
     });
