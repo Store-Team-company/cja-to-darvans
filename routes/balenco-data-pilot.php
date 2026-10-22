@@ -4,6 +4,7 @@ use App\Http\Controllers\BalencoDataPilotController;
 use App\Http\Controllers\BalencoCjaWooApiController;
 use App\Http\Controllers\BdpCategoryMappingController;
 use App\Http\Controllers\BdpProfileController;
+use App\Http\Controllers\BdpCustomerManagementController;
 use App\Http\Controllers\BdpSettingsController;
 use App\Http\Controllers\BdpAiPromptSettingsController;
 use App\Http\Middleware\BalencoDataPilotAuth;
@@ -111,6 +112,17 @@ Route::middleware([BalencoDataPilotAuth::class])->name('bdp.')->group(function (
     Route::post('/products/labels/assign', [BalencoDataPilotController::class, 'assignProductLabel'])->name('products.labels.assign');
     Route::post('/products/labels/remove', [BalencoDataPilotController::class, 'removeProductLabel'])->name('products.labels.remove');
     Route::get('/products/{product}/images.zip', [BalencoDataPilotController::class, 'downloadProductImagesZip'])->name('products.images.zip');
+
+    // Only existing password-authenticated BDP platform admins can manage SaaS
+    // customers. Never mount these under customer /app session auth.
+    Route::get('/admin/customers', [BdpCustomerManagementController::class, 'index'])
+        ->name('customers.index');
+    Route::get('/admin/customers/{workspace:public_id}', [BdpCustomerManagementController::class, 'show'])
+        ->name('customers.show');
+    Route::post('/admin/customers/{workspace:public_id}/suspend', [BdpCustomerManagementController::class, 'suspend'])
+        ->middleware('throttle:6,1')->name('customers.suspend');
+    Route::post('/admin/customers/{workspace:public_id}/restore', [BdpCustomerManagementController::class, 'restore'])
+        ->middleware('throttle:6,1')->name('customers.restore');
 
     Route::get('/sync-queue', [BalencoDataPilotController::class, 'syncQueue'])->name('sync.queue.index');
     Route::post('/sync-queue/enqueue', [BalencoDataPilotController::class, 'enqueueSyncQueue'])->name('sync.queue.enqueue');
