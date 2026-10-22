@@ -215,7 +215,7 @@ class SaasPortalBillingTest extends TestCase
         [$owner, $workspace] = $this->workspace();
         [$other, $different] = $this->workspace('victim@example.test');
 
-        SaasWorkspaceBilling::create([
+        $different->billing()->create([
             'workspace_id' => $different->id,
             'stripe_customer_id' => 'cus_test_one',
             'stripe_subscription_id' => 'sub_other_test',
@@ -240,7 +240,7 @@ class SaasPortalBillingTest extends TestCase
     public function test_canceling_or_expiring_subscription_revokes_import_entitlements(): void
     {
         [$owner, $workspace] = $this->workspace();
-        $bill = SaasWorkspaceBilling::create([
+        $bill = $workspace->billing()->create([
             'workspace_id' => $workspace->id,
             'stripe_customer_id' => 'cus_test_one',
             'stripe_subscription_id' => 'sub_test_one',
@@ -269,7 +269,7 @@ class SaasPortalBillingTest extends TestCase
     public function test_plan_product_limit_is_enforced_server_side(): void
     {
         [$owner, $workspace] = $this->workspace();
-        SaasWorkspaceBilling::create([
+        $workspace->billing()->create([
             'workspace_id' => $workspace->id,
             'stripe_customer_id' => 'cus_limit',
             'stripe_subscription_id' => 'sub_limit',
