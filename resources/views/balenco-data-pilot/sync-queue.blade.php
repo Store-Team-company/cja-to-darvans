@@ -1,5 +1,7 @@
 @extends('balenco-data-pilot.layout')
 
+@section('title', 'Sync Queue | Data Pilot')
+
 @section('content')
 <style>
 .bdp-sync-page {
@@ -160,6 +162,8 @@
     font-weight: 900;
     line-height: 1.3;
 }
+.bdp-product-name a{color:inherit;text-decoration:none}
+.bdp-product-name a:hover{text-decoration:underline}
 .bdp-muted {
     color: #64748b;
     font-size: 12px;
@@ -192,10 +196,18 @@
     color: #b91c1c;
 }
 .bdp-sync-empty {
-    padding: 36px;
+    padding: 38px 20px;
     text-align: center;
     color: #64748b;
 }
+.bdp-sync-empty-icon{width:52px;height:52px;border-radius:17px;display:grid;place-items:center;margin:0 auto 14px;background:#eef3ff;color:#1e3a8a}
+.bdp-sync-empty-icon svg{width:27px;height:27px}
+.bdp-sync-empty h2{font-size:18px;line-height:1.25;color:#0f172a;margin:0 0 7px}
+.bdp-sync-empty p{max-width:510px;margin:0 auto 16px;line-height:1.6}
+.bdp-sync-empty-actions{display:flex;justify-content:center;gap:10px;flex-wrap:wrap}
+.bdp-sync-header-actions{display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+.bdp-sync-mobile-hint{display:none;color:#64748b;font-size:12px;padding:10px 16px;background:#f8fafc;border-bottom:1px solid #e5e7eb}
+.bdp-sync-stat:focus-visible,.bdp-sync-btn:focus-visible{outline:3px solid #93c5fd;outline-offset:2px}
 .bdp-sync-pagination {
     display: flex;
     justify-content: space-between;
@@ -245,6 +257,15 @@
     .bdp-sync-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .bdp-sync-filter { grid-template-columns: 1fr; }
     .bdp-sync-table { min-width: 1050px; }
+    .bdp-sync-mobile-hint{display:block}
+}
+@media(max-width:640px){
+    .bdp-sync-header{flex-direction:column}
+    .bdp-sync-header-actions{width:100%}
+    .bdp-sync-header-actions .bdp-sync-btn{flex:1}
+    .bdp-sync-page{padding-top:0}
+    .bdp-sync-stats{gap:9px}
+    .bdp-sync-stat{padding:13px}
 }
 </style>
 
@@ -252,9 +273,12 @@
     <div class="bdp-sync-header">
         <div class="bdp-sync-title">
             <h1>Sync Queue</h1>
-            <p>Products added here are synced by cron one by one. Variation images are copied to store.balencousa.com during sync.</p>
+            <p>Track products waiting for scheduled sync, review failures, and confirm completed transfers to your connected store.</p>
         </div>
-        <a class="bdp-sync-btn" href="{{ route('bdp.products') }}">Back to Products</a>
+        <div class="bdp-sync-header-actions">
+            <a class="bdp-sync-btn" href="{{ route('bdp.products') }}">Choose Products</a>
+            <a class="bdp-sync-btn primary" href="{{ route('bdp.cj.import') }}">Import from CJ</a>
+        </div>
     </div>
 
     <div class="bdp-sync-stats">
@@ -283,8 +307,8 @@
     <div class="bdp-sync-panel">
         <form method="get" action="{{ route('bdp.sync.queue.index') }}" class="bdp-sync-filter">
             <div class="bdp-sync-field">
-                <label>Status</label>
-                <select name="status">
+                <label for="queue-status">Status</label>
+                <select name="status" id="queue-status">
                     <option value="all" @selected(($status ?? 'all') === 'all')>All</option>
                     <option value="queued" @selected(($status ?? '') === 'queued')>Queued</option>
                     <option value="processing" @selected(($status ?? '') === 'processing')>Processing</option>
@@ -293,13 +317,14 @@
                 </select>
             </div>
             <div class="bdp-sync-field">
-                <label>Search</label>
-                <input type="text" name="search" value="{{ $search ?? '' }}" placeholder="Product title, SKU, or Data Pilot ID">
+                <label for="queue-search">Search</label>
+                <input type="search" id="queue-search" name="search" value="{{ $search ?? '' }}" placeholder="Product title, SKU, or Data Pilot ID">
             </div>
             <button class="bdp-sync-btn primary" type="submit">Filter</button>
             <a class="bdp-sync-btn" href="{{ route('bdp.sync.queue.index') }}">Reset</a>
         </form>
 
+        <div class="bdp-sync-mobile-hint">Scroll horizontally to view all queue details →</div>
         <div class="bdp-sync-table-wrap">
             <table class="bdp-sync-table">
                 <thead>
@@ -318,7 +343,7 @@
                     @forelse($items as $item)
                         <tr>
                             <td>
-                                <div class="bdp-product-name">{{ $item->product_name ?: 'Product #' . $item->product_id }}</div>
+                                <div class="bdp-product-name">@if($item->product_name)<a href="{{ route('bdp.products.edit', $item->product_id) }}">{{ $item->product_name }}</a>@else Product #{{ $item->product_id }} @endif</div>
                                 <div class="bdp-muted">
                                     Data Pilot ID: {{ $item->product_id }}
                                     @if($item->shofy_product_id)
@@ -343,7 +368,23 @@
                     @empty
                         <tr>
                             <td colspan="8">
-                                <div class="bdp-sync-empty">No queue items found.</div>
+                                <div class="bdp-sync-empty">
+                                    <div class="bdp-sync-empty-icon" aria-hidden="true">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="5" rx="1"/><path d="M7 9v4h10V9M3 16h18M7 20h10"/></svg>
+                                    </div>
+                                    @if(($counts['all'] ?? 0) === 0)
+                                        <h2>Your sync queue is empty</h2>
+                                        <p>First import a product from CJ, review its details, then select it on the Products page to add it to the queue. A configured cron job processes queued items.</p>
+                                        <div class="bdp-sync-empty-actions">
+                                            <a class="bdp-sync-btn primary" href="{{ route('bdp.cj.import') }}">Import your first product</a>
+                                            <a class="bdp-sync-btn" href="{{ route('bdp.products') }}">Open Products</a>
+                                        </div>
+                                    @else
+                                        <h2>No items match your filters</h2>
+                                        <p>Try a different status or product name, or clear the filters to see every queued product.</p>
+                                        <div class="bdp-sync-empty-actions"><a class="bdp-sync-btn primary" href="{{ route('bdp.sync.queue.index') }}">Clear filters</a></div>
+                                    @endif
+                                </div>
                             </td>
                         </tr>
                     @endforelse
