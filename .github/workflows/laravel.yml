@@ -17,7 +17,7 @@ jobs:
           coverage: none
       - name: Validate PHP syntax
         run: |
-          find app config database routes tests -type f -name '*.php' -print0 | xargs -0 -n1 php -l
+          find app config database routes tests integrations/botble-connector -type f -name '*.php' -print0 | xargs -0 -n1 php -l
       - name: Install Composer dependencies
         run: composer install --no-interaction --prefer-dist --no-progress
       - name: Prepare application

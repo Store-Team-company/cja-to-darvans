@@ -1,0 +1,21 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+
+class SaasProduct extends Model
+{
+    protected $table = 'saas_products';
+
+    // Never allow a user-supplied workspace_id through mass assignment.
+    protected $guarded = ['id', 'workspace_id'];
+
+    protected $casts = ['source_snapshot' => 'array'];
+
+    public function workspace(): BelongsTo
+    {
+        return $this->belongsTo(SaasWorkspace::class, 'workspace_id');
+    }
+}
