@@ -37,10 +37,27 @@ class BalencoDataPilotController extends Controller
             'password' => ['required', 'string'],
         ]);
 
-        $expectedUsername = config('balenco-data-pilot.login_username', env('BDP_LOGIN_USERNAME', 'admin'));
-        $expectedPassword = config('balenco-data-pilot.login_password', '');
+        $expectedUsername = (string) config('balenco-data-pilot.login_username', '');
+        $expectedPassword = (string) config('balenco-data-pilot.login_password', '');
+        $expectedHash = (string) config('balenco-data-pilot.login_password_hash', '');
 
-        if ($expectedPassword !== '' && $credentials['username'] === $expectedUsername && hash_equals((string) $expectedPassword, (string) $credentials['password'])) {
+        // Prefer the editable admin profile; an installation no longer relies on
+        // a plain-text password in .env. Explicit legacy credentials are retained
+        // for existing installations which have not migrated to profile login.
+        $valid = false;
+        if (\Illuminate\Support\Facades\Schema::hasTable('bdp_admin_profiles')) {
+            $profile = \App\Models\BdpAdminProfile::where('username', $credentials['username'])->first();
+            if ($profile && is_string($profile->password) && $profile->password !== '') {
+                $valid = ! hash_equals('admin12345', $credentials['password'])
+                    && Hash::check($credentials['password'], $profile->password);
+            }
+        }
+        if (! $valid && hash_equals($expectedUsername, $credentials['username'])) {
+            $valid = ($expectedHash !== '' && Hash::check($credentials['password'], $expectedHash))
+                || ($expectedPassword !== '' && hash_equals($expectedPassword, $credentials['password']));
+        }
+
+        if ($valid) {
             $request->session()->regenerate();
             session(['bdp_logged_in' => true]);
 

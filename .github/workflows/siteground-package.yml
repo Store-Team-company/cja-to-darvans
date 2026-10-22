@@ -1,0 +1,66 @@
+name: SiteGround install package
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'app/**'
+      - 'bootstrap/**'
+      - 'config/**'
+      - 'database/**'
+      - 'deploy/**'
+      - 'docs/SITEGROUND_INSTALL.md'
+      - 'public/**'
+      - 'resources/**'
+      - 'routes/**'
+      - 'scripts/build-siteground.php'
+      - 'composer.*'
+      - 'phpunit.xml'
+      - '.github/workflows/siteground-package.yml'
+
+jobs:
+  tests:
+    name: Test application and installer
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: mbstring, pdo_sqlite, pdo_mysql, sqlite3, zip, dom, xml
+          coverage: none
+      - name: Validate PHP syntax
+        run: |
+          find app bootstrap config database deploy public routes scripts tests -type f -name '*.php' -print0 | xargs -0 -n1 php -l
+      - name: Install test dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress
+      - name: Regression suite
+        run: php artisan test
+        env:
+          APP_ENV: testing
+          DB_CONNECTION: sqlite
+          DB_DATABASE: ':memory:'
+          APP_KEY: 'base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA='
+
+  package:
+    name: Build safe shared-hosting ZIP
+    needs: tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: mbstring, pdo_mysql, zip, dom, xml
+          coverage: none
+      - name: Install production PHP dependencies
+        run: composer install --no-dev --no-interaction --prefer-dist --no-progress --optimize-autoloader
+      - name: Build and verify SiteGround upload ZIP
+        run: php scripts/build-siteground.php
+      - name: Publish upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: data-pilot-siteground-upload
+          path: dist/data-pilot-siteground.zip
+          if-no-files-found: error
+          retention-days: 7

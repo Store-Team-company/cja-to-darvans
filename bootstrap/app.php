@@ -15,6 +15,16 @@ $app = new Illuminate\Foundation\Application(
     $_ENV['APP_BASE_PATH'] ?? dirname(__DIR__)
 );
 
+// SiteGround packages place Laravel code beside public_html, never inside it.
+// The marker is generated only by the packaging script; local installs are unchanged.
+if (is_file(dirname(__DIR__).'/.siteground-layout')) {
+    $public = dirname(__DIR__, 2).'/public_html';
+    if (is_dir($public)) {
+        $app->usePublicPath($public);
+    }
+}
+
+
 /*
 |--------------------------------------------------------------------------
 | Bind Important Interfaces
