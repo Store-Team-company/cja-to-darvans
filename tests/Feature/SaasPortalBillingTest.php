@@ -495,13 +495,13 @@ class SaasPortalBillingTest extends TestCase
     public function test_signup_normalizes_email_and_rejects_case_variant_duplicates(): void
     {
         config()->set('saas.registration_enabled', true);
-        \Illuminate\Support\Facades\Notification::fake();
+        \Illuminate\Support\Facades\Mail::fake();
         $this->post(route('saas.register.submit'), [
             'name' => 'Store Owner', 'workspace_name' => 'Example Store',
             'email' => 'Owner@Example.Test',
             'password' => 'StrongPasswordTest123',
             'password_confirmation' => 'StrongPasswordTest123',
-        ])->assertRedirect(route('verification.notice'));
+        ])->assertRedirect(route('saas.otp.verify.form'));
 
         $this->assertDatabaseHas('users', ['email' => 'owner@example.test']);
         $this->post(route('saas.register.submit'), [
