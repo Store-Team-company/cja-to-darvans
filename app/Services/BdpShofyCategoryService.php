@@ -98,14 +98,7 @@ class BdpShofyCategoryService
         }
 
         try {
-            if (!Schema::connection($this->connection)->hasTable('ec_product_categories')) {
-                throw new RuntimeException(
-                    'Botble was reached, but its ec_product_categories table is missing. '.
-                    'Check the selected store database and Botble eCommerce installation.'
-                );
-            }
-        } catch (RuntimeException $e) {
-            throw $e;
+            $hasCategories = Schema::connection($this->connection)->hasTable('ec_product_categories');
         } catch (Throwable $e) {
             Log::warning('Botble category sync could not connect to the configured store', [
                 'error_type' => get_class($e),
@@ -116,6 +109,13 @@ class BdpShofyCategoryService
                 'credentials and permissions in your private configuration.',
                 0,
                 $e
+            );
+        }
+
+        if (!$hasCategories) {
+            throw new RuntimeException(
+                'Botble was reached, but its ec_product_categories table is missing. '.
+                'Check the selected store database and Botble eCommerce installation.'
             );
         }
     }
