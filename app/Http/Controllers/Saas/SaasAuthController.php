@@ -87,6 +87,7 @@ class SaasAuthController extends Controller
             'token' => ['required', 'string'],
             'email' => ['required', 'email'],
             'password' => ['required', 'confirmed', PasswordRule::min(12)->mixedCase()->numbers()],
+            'password_confirmation' => ['required', 'same:password'],
         ]);
         $status = Password::reset([
             'email' => mb_strtolower(trim($data['email'])),
