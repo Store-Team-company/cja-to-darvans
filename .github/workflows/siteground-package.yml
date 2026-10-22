@@ -22,6 +22,9 @@ on:
       - 'docs/SITEGROUND_UI_CATEGORY_REPAIR.md'
       - 'scripts/deploy-siteground-ui-category-repair.php'
       - 'scripts/verify-ui-category-deployer.php'
+      - 'scripts/deploy-siteground-saas-02.php'
+      - 'scripts/verify-siteground-saas-02.php'
+      - 'docs/SAAS_CUSTOMER_PORTAL_STRIPE_02.md'
       - 'docs/SITEGROUND_UI_UPDATE.md'
       - 'composer.*'
       - 'phpunit.xml'
@@ -76,6 +79,10 @@ jobs:
           # PR checkouts are detached; give the smoke test its expected reviewed branch name.
           git switch -c feature/datapilot-ui-category-repair-20261022
           php scripts/verify-ui-category-deployer.php
+      - name: Verify SaaS-02 staging deployment safety
+        run: |
+          git switch -c feature/datapilot-saas-02-portal-stripe-billing
+          php scripts/verify-siteground-saas-02.php
       - name: Build and smoke-check incremental SaaS update
         run: |
           php scripts/build-siteground-saas-update.php
