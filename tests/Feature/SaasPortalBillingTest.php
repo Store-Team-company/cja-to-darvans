@@ -300,6 +300,33 @@ class SaasPortalBillingTest extends TestCase
         $this->assertFalse(app(SaasEntitlements::class)->active($different));
     }
 
+    public function test_current_stripe_item_period_format_grants_and_expires_access(): void
+    {
+        [$owner, $workspace] = $this->workspace();
+        $subscription = $this->subscription($workspace);
+        unset($subscription['current_period_end']);
+        $subscription['items']['data'][0]['current_period_end'] = now()->addWeeks(4)->timestamp;
+        $subscription['items']['data'][0]['quantity'] = 1;
+        Http::fake(['api.stripe.com/v1/subscriptions/*' => Http::response($subscription, 200)]);
+
+        [$body, $signature] = $this->signedEvent([
+            'id' => 'evt_new_stripe_period', 'created' => time(),
+            'type' => 'customer.subscription.updated',
+            'data' => ['object' => $subscription],
+        ]);
+        $this->call('POST', '/api/saas/stripe/webhook', [], [], [], [
+            'HTTP_STRIPE_SIGNATURE' => $signature,
+        ], $body)->assertOk();
+
+        $this->assertNotNull($workspace->billing()->first()->current_period_end);
+        $this->assertTrue(app(SaasEntitlements::class)->active($workspace));
+
+        $workspace->billing()->first()->update([
+            'current_period_end' => now()->subMinute(),
+        ]);
+        $this->assertFalse(app(SaasEntitlements::class)->active($workspace));
+    }
+
     public function test_subscription_events_cannot_assign_other_merchants_customer_or_plan(): void
     {
         [$owner, $workspace] = $this->workspace();
