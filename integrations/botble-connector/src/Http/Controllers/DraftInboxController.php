@@ -53,9 +53,19 @@ class DraftInboxController extends Controller
             'title' => ['required', 'string', 'min:1', 'max:250'],
             'sku' => ['nullable', 'string', 'max:180'],
             'description' => ['nullable', 'string', 'max:10000'],
+            'price' => ['nullable', 'numeric', 'min:0', 'max:99999999'],
+            'quantity' => ['nullable', 'integer', 'min:0', 'max:999999999'],
+            'images' => ['sometimes', 'array', 'max:8'],
+            'images.*' => ['required', 'url', 'starts_with:https://', 'max:2048'],
+            'category_ids' => ['sometimes', 'array', 'max:10'],
+            'category_ids.*' => ['required', 'integer', 'min:1', 'distinct'],
             'variants' => ['sometimes', 'array', 'max:20'],
-            'variants.*.sku' => ['required_with:variants', 'string', 'max:180'],
+            'variants.*.source_variant_id' => ['nullable', 'string', 'max:180'],
+            'variants.*.sku' => ['required', 'string', 'max:180'],
             'variants.*.price' => ['nullable', 'numeric', 'min:0', 'max:99999999'],
+            'variants.*.quantity' => ['nullable', 'integer', 'min:0', 'max:999999999'],
+            'variants.*.attributes' => ['sometimes', 'array', 'max:5'],
+            'variants.*.image' => ['nullable', 'url', 'starts_with:https://', 'max:2048'],
         ]);
         if ($validator->fails()) {
             return response()->json(['message' => 'Invalid draft product payload.'], 422);
@@ -64,10 +74,22 @@ class DraftInboxController extends Controller
         // unexpected business fields would lead to accidental publishing
         // behaviors in future connector versions.
         $extra = array_diff(array_keys($data), [
-            'idempotency_key', 'source', 'source_product_id', 'title', 'sku', 'description', 'variants',
+            'idempotency_key', 'source', 'source_product_id', 'title', 'sku', 'description',
+            'price', 'quantity', 'images', 'category_ids', 'variants',
         ]);
         if ($extra) {
             return response()->json(['message' => 'Unknown product fields.'], 422);
+        }
+        foreach ($data['variants'] ?? [] as $variant) {
+            if (array_diff(array_keys($variant), ['sku', 'price', 'quantity', 'attributes', 'source_variant_id', 'image'])) {
+                return response()->json(['message' => 'Unknown variation fields.'], 422);
+            }
+            foreach (($variant['attributes'] ?? []) as $key => $value) {
+                if (!is_string($key) || trim($key) === '' || strlen($key) > 100
+                    || !is_string($value) || trim($value) === '' || strlen($value) > 100) {
+                    return response()->json(['message' => 'Invalid variation attributes.'], 422);
+                }
+            }
         }
 
         $timestamp = (int) $request->header('X-DataPilot-Timestamp');
