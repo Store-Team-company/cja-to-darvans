@@ -38,9 +38,9 @@ class BalencoDataPilotController extends Controller
         ]);
 
         $expectedUsername = config('balenco-data-pilot.login_username', env('BDP_LOGIN_USERNAME', 'admin'));
-        $expectedPassword = config('balenco-data-pilot.login_password', env('BDP_LOGIN_PASSWORD', 'change-this-password'));
+        $expectedPassword = config('balenco-data-pilot.login_password', '');
 
-        if ($credentials['username'] === $expectedUsername && hash_equals((string) $expectedPassword, (string) $credentials['password'])) {
+        if ($expectedPassword !== '' && $credentials['username'] === $expectedUsername && hash_equals((string) $expectedPassword, (string) $credentials['password'])) {
             $request->session()->regenerate();
             session(['bdp_logged_in' => true]);
 
