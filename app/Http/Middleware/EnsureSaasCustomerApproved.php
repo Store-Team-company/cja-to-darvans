@@ -12,7 +12,7 @@ final class EnsureSaasCustomerApproved
     public function handle(Request $request, Closure $next): Response
     {
         $user = $request->user();
-        abort_unless($user && app(SaasAccountAccess::class)->allows($user), 403,
+        abort_unless($user && app(SaasAccountAccess::class)->allows($user), 404,
             'Customer account is not activated.');
 
         if ($user->saas_password_change_required) {
