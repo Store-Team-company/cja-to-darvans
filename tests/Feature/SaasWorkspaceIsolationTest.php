@@ -156,6 +156,43 @@ class SaasWorkspaceIsolationTest extends TestCase
         $this->assertArrayNotHasKey('shared_secret', $store->toArray());
     }
 
+    public function test_only_a_valid_signed_email_link_verifies_the_customer(): void
+    {
+        $user = $this->user('needs-verification@example.test', false);
+        $workspace = $this->workspace($user);
+
+        $signedUrl = \Illuminate\Support\Facades\URL::temporarySignedRoute(
+            'verification.verify',
+            now()->addMinutes(30),
+            ['id' => $user->id, 'hash' => sha1($user->getEmailForVerification())]
+        );
+
+        $this->actingAs($user)->get($signedUrl)->assertRedirect(route('saas.home'));
+        $this->assertNotNull($user->fresh()->email_verified_at);
+
+        $other = $this->user('tampered@example.test', false);
+        $tampered = str_replace('hash=', 'hash=forged', $signedUrl);
+        $this->actingAs($other)->get($tampered)->assertForbidden();
+        $this->assertNull($other->fresh()->email_verified_at);
+    }
+
+    public function test_revoked_membership_immediately_loses_workspace_access(): void
+    {
+        $owner = $this->user('revoked@example.test');
+        $workspace = $this->workspace($owner);
+
+        $this->actingAs($owner)->get(route('saas.workspace.dashboard', $workspace->public_id))
+            ->assertOk();
+
+        \Illuminate\Support\Facades\DB::table('saas_workspace_memberships')
+            ->where('workspace_id', $workspace->id)
+            ->where('user_id', $owner->id)
+            ->update(['status' => 'revoked']);
+
+        $this->actingAs($owner)->get(route('saas.workspace.dashboard', $workspace->public_id))
+            ->assertNotFound();
+    }
+
     public function test_unauthed_workspace_url_goes_to_customer_login_not_legacy_admin_login(): void
     {
         $user = $this->user('u@example.test');
