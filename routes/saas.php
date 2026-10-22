@@ -22,6 +22,11 @@ Route::middleware([EnsureSaasEnabled::class])->group(function () {
 
 Route::prefix('app')->middleware([EnsureSaasEnabled::class])->name('saas.')->group(function () {
     Route::get('/login', [SaasAuthController::class, 'showLogin'])->name('login');
+    Route::get('/otp', [SaasAuthController::class, 'showOtp'])->name('otp.verify.form');
+    Route::post('/otp/send', [SaasAuthController::class, 'sendOtp'])
+        ->middleware('throttle:3,1')->name('otp.send');
+    Route::post('/otp/verify', [SaasAuthController::class, 'verifyOtp'])
+        ->middleware('throttle:8,1')->name('otp.verify');
     Route::get('/forgot-password', [SaasAuthController::class, 'forgotForm'])->name('password.request');
     Route::post('/forgot-password', [SaasAuthController::class, 'sendReset'])->middleware('throttle:5,1')->name('password.email');
     Route::post('/reset-password', [SaasAuthController::class, 'resetPassword'])->middleware('throttle:5,1')->name('password.update');
