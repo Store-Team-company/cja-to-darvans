@@ -10,4 +10,9 @@ class IncomingDraft extends Model
     protected $guarded = ['id', 'pairing_id'];
     protected $casts = ['payload' => 'encrypted:array'];
     protected $hidden = ['payload'];
+
+    public function pairing()
+    {
+        return $this->belongsTo(ConnectorPairing::class, 'pairing_id');
+    }
 }

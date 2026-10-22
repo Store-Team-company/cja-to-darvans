@@ -1,10 +1,10 @@
-# Data Pilot Botble Connector v0.2.0 — Pairing + Signed Draft Inbox
+# Data Pilot Botble Connector v0.3.0 — Pairing + Signed Draft Inbox
 
 Status: **DEVELOPMENT / not approved for live product publication**. This is the first installable connector milestone. It supports secure merchant-controlled pairing with the Data Pilot SaaS, encrypted store secrets, and a disabled-by-default draft inbox. **It does not write Botble eCommerce products yet.**
 
 ## Installation — test Botble CMS only
 
-This plugin is stored at \`integrations/botble-connector\` in the Data Pilot repository. Use the GitHub Actions artifact \`datapilot-connector-0.2.0.zip\`, extract it into the Botble application's \`platform/plugins/\` directory so the final folder is \`platform/plugins/datapilot-connector/\`.
+This plugin is stored at \`integrations/botble-connector\` in the Data Pilot repository. Use the GitHub Actions artifact \`datapilot-connector-0.3.0.zip\`, extract it into the Botble application's \`platform/plugins/\` directory so the final folder is \`platform/plugins/datapilot-connector/\`.
 
 Use the Botble admin plugin manager to activate the plugin. Plugin-owned migrations run through Botble's plugin lifecycle. Before installing, verify the target Botble release's provider registration, middleware, PHP requirement and eCommerce plugin version in an isolated test site.
 
@@ -36,7 +36,7 @@ This protocol trusts the merchant to enter the code only in the real Botble admi
 Merchant CJ API (future: approved multi-user integration)
  → Data Pilot SaaS (tenant-scoped source snapshot; price/variant review)
  → signed JSON draft command
- → Botble Connector v0.2.0 (/api/datapilot/v1/drafts)
+ → Botble Connector v0.3.0 (/api/datapilot/v1/drafts)
  → HMAC + timestamp + nonce + strict schema + idempotency checks
  → encrypted pending_review inbox record
  → eCommerce product/variant/category/media upsert (NEXT PHASE; unavailable)
@@ -67,3 +67,66 @@ This PR adds \`database/migrations/2026_10_22_000004_create_saas_botble_pairing_
 - CJ commercial multi-merchant authorization before processing many merchants from one IP.
 
 Official Botble plugin guide: https://docs.botble.com/cms/plugin-development/structure.html
+
+
+## 0.3.0 B1 — limited native catalog preview (NOT APPROVED FOR STAGING INSTALL YET)
+
+This release adds an admin-only **Incoming Products** review list and an explicit
+approval route. It is a development candidate, NOT a finished CJ→Botble
+synchronizer. Existing v0.2 pairing and encrypted draft inbox tables remain
+unchanged; an additive plugin migration creates product/variation mapping tables.
+
+- `DATAPILOT_INBOUND_DRAFTS_ENABLED=false` stays disabled by default.
+- `DATAPILOT_CATALOG_IMPORT_ENABLED=false` stays disabled by default.
+- Native import uses Botble's eCommerce Product/Variation/Attribute models; product
+  status is **draft** at creation, and the plug-in never sends publish commands.
+- Only payloads with explicit reviewed retail prices can be approved; SKU
+  collisions and missing/changed native mappings block the transaction.
+- Variation attributes must be a nonempty object (example `{"Color":"Red","Size":"M"}`);
+  SKU-only variations cannot be approved. Variation helpers and pivot structure
+  must be verified on the *actual* Botble eCommerce installation.
+- Image payloads are staged but **cannot yet be approved for catalog import**;
+  no unsafe remote media downloads are performed. Category/SEO mapping, full
+  image support, real SaaS outbound delivery and first-party entitlement remain
+  pending B1/B2 work.
+- Native errors rollback the transaction; no connection credentials are rendered
+  in the inbox. The imported status means a native **draft**, not a published
+  product. The inbox's HMAC 202 response means *staged only*.
+
+### Prepare the actual Botble staging compatibility check
+
+On the Botble staging server, record the output of these read-only commands:
+
+```sh
+php artisan --version
+php -v
+php artisan cms:plugin:list
+php artisan cms:plugin:list | grep -i ecommerce
+```
+
+Check the actual installed `platform/plugins/ecommerce/src/Models/` signatures,
+`ec_product_variations` / `ec_product_variation_items` migrations, and the
+implementation of `ProductVariation::getVariationByAttributesOrCreate` before
+enabling native imports. Use an isolated staging database backup and an authorized
+plugin upgrade from v0.2; never install this draft over a production store.
+
+Sample signed payload additions (the existing HMAC envelope and `idempotency_key`
+remain mandatory):
+```json
+{
+  "idempotency_key": "11111111-1111-4111-8111-111111111111",
+  "source": "cj",
+  "source_product_id": "CJ-SAMPLE-1",
+  "title": "Sample for internal review only",
+  "sku": "CJ-SAMPLE-1",
+  "description": "Review before publication",
+  "price": 59.99,
+  "quantity": 0,
+  "variants": [
+    {"source_variant_id":"CJ-SAMPLE-1-RED-M","sku":"CJ-SAMPLE-1-RED-M","price":59.99,"quantity":0,"attributes":{"Color":"Red","Size":"M"}}
+  ]
+}
+```
+
+Never reuse the example idempotency key in a real integration. No real CJ
+products, customers, or Botble data have been transferred by this draft.

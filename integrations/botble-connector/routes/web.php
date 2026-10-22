@@ -3,6 +3,7 @@
 use Botble\Base\Facades\BaseHelper;
 use Botble\DatapilotConnector\Http\Controllers\SettingsController;
 use Botble\DatapilotConnector\Http\Controllers\DraftInboxController;
+use Botble\DatapilotConnector\Http\Controllers\IncomingProductsController;
 use Illuminate\Support\Facades\Route;
 
 // Read-only settings are visible to authorized Botble administrators ONLY.
@@ -19,6 +20,16 @@ Route::group(['middleware' => ['web', 'core']], function (): void {
             'uses' => SettingsController::class . '@pair',
             'permission' => 'datapilot-connector.settings',
         ])->middleware('throttle:5,1');
+        Route::get('data-pilot/incoming-products', [
+            'as' => 'datapilot.connector.incoming',
+            'uses' => IncomingProductsController::class . '@index',
+            'permission' => 'datapilot-connector.settings',
+        ]);
+        Route::post('data-pilot/incoming-products/{draft}/approve', [
+            'as' => 'datapilot.connector.incoming.approve',
+            'uses' => IncomingProductsController::class . '@approve',
+            'permission' => 'datapilot-connector.settings',
+        ])->middleware([\Illuminate\Routing\Middleware\SubstituteBindings::class, 'throttle:10,1']);
         Route::post('data-pilot/connector/revoke', [
             'as' => 'datapilot.connector.revoke',
             'uses' => SettingsController::class . '@revoke',
