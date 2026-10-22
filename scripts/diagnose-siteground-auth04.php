@@ -139,7 +139,10 @@ if ($probeHost !== '' && $driver === 'smtp') {
         } elseif (strtolower((string) ($smtp['encryption'] ?? '')) === 'tls') {
             // STARTTLS: read the server's greeting and capability response,
             // then request TLS. Never attempt AUTH or transmit an OTP.
-            $conn = @stream_socket_client('tcp://'.$probeHost.':'.$port, $tcpErrno, $tcpError, 8);
+            $conn = @stream_socket_client(
+                'tcp://'.$probeHost.':'.$port, $tcpErrno, $tcpError, 8,
+                STREAM_CLIENT_CONNECT, $context
+            );
             $valid = false;
             if (is_resource($conn)) {
                 stream_set_timeout($conn, 5);
