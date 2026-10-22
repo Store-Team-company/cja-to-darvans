@@ -1,8 +1,19 @@
 @extends('balenco-data-pilot.layout')
 
-@section('title', 'Dashboard | Balenco Data Pilot')
+@section('title', 'Dashboard | Data Pilot')
 
 @section('content')
+<style>
+    .bdp-status-toast.is-idle{background:#eff6ff;border-color:#cfe0fd;color:#1e40af}
+    .bdp-onboarding{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:21px 24px;margin-bottom:20px;background:#fff;border:1px solid #dfe8f4;border-radius:16px;box-shadow:var(--bdp-shadow)}
+    .bdp-onboarding-eyebrow{font-size:11px;text-transform:uppercase;letter-spacing:.09em;font-weight:850;color:#e8580c}
+    .bdp-onboarding h2{font-size:19px;line-height:1.25;margin:5px 0;color:#101b36}
+    .bdp-onboarding p{margin:0;color:#64748b;max-width:720px;line-height:1.5}
+    .bdp-onboarding-actions{display:flex;gap:10px;flex-wrap:wrap;flex:0 0 auto}
+    .bdp-footer-note a{color:#334155;text-decoration:underline}
+    @media(max-width:980px){.bdp-onboarding{align-items:flex-start;flex-direction:column}.bdp-onboarding-actions{width:100%}}
+</style>
+
 @php
     $total = max((int)($stats['all'] ?? 0), 1);
     $syncedPercent = round((($stats['synced'] ?? 0) / $total) * 100);
@@ -16,12 +27,30 @@
         <h1>Dashboard</h1>
         <p>Overview of product sync, pricing, and import activity.</p>
     </div>
-    <div class="bdp-status-toast"><span class="bdp-dot"></span> Synced {{ $stats['synced'] ?? 0 }} products and {{ $stats['variations'] ?? 0 }} variations to Balenco.</div>
+    @if(($stats['all'] ?? 0) > 0)
+        <div class="bdp-status-toast"><span class="bdp-dot"></span> {{ $stats['synced'] ?? 0 }} of {{ $stats['all'] ?? 0 }} products synced to your store</div>
+    @else
+        <div class="bdp-status-toast is-idle"><span class="bdp-dot"></span> Ready for your first product import</div>
+    @endif
 </div>
+
+@if(($stats['all'] ?? 0) === 0)
+<div class="bdp-onboarding">
+    <div>
+        <span class="bdp-onboarding-eyebrow">Getting started</span>
+        <h2>Bring your first product into Data Pilot</h2>
+        <p>Connect CJ Dropshipping, import a product, review its variations and prices, then add it to your sync queue.</p>
+    </div>
+    <div class="bdp-onboarding-actions">
+        <a class="bdp-btn light" href="{{ route('bdp.cj.settings') }}">1. Connect CJ</a>
+        <a class="bdp-btn orange" href="{{ route('bdp.cj.import') }}">2. Import products →</a>
+    </div>
+</div>
+@endif
 
 <div class="bdp-grid bdp-stats">
     <div class="bdp-stat-card"><div class="bdp-stat-icon is-blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8 12 3 3 8l9 5 9-5Z"/><path d="M3 8v8l9 5 9-5V8"/></svg></div><div><div class="bdp-stat-label">Total Products</div><div class="bdp-stat-number">{{ $stats['all'] ?? 0 }}</div><div class="bdp-stat-note">{{ $stats['variations'] ?? 0 }} variations</div></div></div>
-    <div class="bdp-stat-card"><div class="bdp-stat-icon is-green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m20 6-11 11-5-5"/></svg></div><div><div class="bdp-stat-label">Synced to Balenco</div><div class="bdp-stat-number">{{ $stats['synced'] ?? 0 }}</div><div class="bdp-stat-note">{{ $syncedPercent }}% of total</div></div></div>
+    <div class="bdp-stat-card"><div class="bdp-stat-icon is-green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m20 6-11 11-5-5"/></svg></div><div><div class="bdp-stat-label">Synced to Store</div><div class="bdp-stat-number">{{ $stats['synced'] ?? 0 }}</div><div class="bdp-stat-note">{{ $syncedPercent }}% of total</div></div></div>
     <div class="bdp-stat-card"><div class="bdp-stat-icon is-purple"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="m16 11 2 2 4-4"/></svg></div><div><div class="bdp-stat-label">Needs Review</div><div class="bdp-stat-number">{{ $stats['needs_review'] ?? 0 }}</div><div class="bdp-stat-note">{{ $reviewPercent }}% of total</div></div></div>
     <div class="bdp-stat-card"><div class="bdp-stat-icon is-orange"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8 12 3 3 8l9 5 9-5Z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M17 13h4v4"/><path d="M21 13a5 5 0 0 1-5 5"/></svg></div><div><div class="bdp-stat-label">Not Synced</div><div class="bdp-stat-number">{{ $stats['not_synced'] ?? 0 }}</div><div class="bdp-stat-note">{{ $notSyncedPercent }}% of total</div></div></div>
     <div class="bdp-stat-card"><div class="bdp-stat-icon is-red"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg></div><div><div class="bdp-stat-label">Sync Failed</div><div class="bdp-stat-number">{{ $stats['failed'] ?? 0 }}</div><div class="bdp-stat-note">{{ $failedPercent }}% of total</div></div></div>
@@ -32,17 +61,17 @@
 
 <div class="bdp-actions-row">
     <a class="bdp-action-tile primary" href="{{ route('bdp.cj.import') }}"><span class="bdp-action-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 17v3h16v-3"/></svg></span><span><strong>Import from CJ</strong><small>Import new products from CJ</small></span></a>
-    <a class="bdp-action-tile orange" href="{{ route('bdp.products') }}"><span class="bdp-action-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 0 0-15.5-6.2L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 15.5 6.2L21 16"/><path d="M16 16h5v5"/></svg></span><span><strong>Sync Selected Products</strong><small>Open Products and sync to Balenco</small></span></a>
+    <a class="bdp-action-tile orange" href="{{ route('bdp.products') }}"><span class="bdp-action-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 0 0-15.5-6.2L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 15.5 6.2L21 16"/><path d="M16 16h5v5"/></svg></span><span><strong>Sync Selected Products</strong><small>Choose products and queue sync</small></span></a>
     <a class="bdp-action-tile" href="{{ route('bdp.products') }}#bulk-pricing"><span class="bdp-action-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1v22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7H14a3.5 3.5 0 0 1 0 7H6"/></svg></span><span><strong>Bulk Pricing Update</strong><small>Update pricing & margins</small></span></a>
     <a class="bdp-action-tile" href="{{ route('bdp.products') }}"><span class="bdp-action-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8 12 3 3 8l9 5 9-5Z"/><path d="M3 8v8l9 5 9-5V8"/></svg></span><span><strong>Open Products</strong><small>View all products</small></span></a>
-    <a class="bdp-action-tile" href="{{ route('bdp.api.logs') }}" style="justify-content:center"><strong>•••</strong></a>
+    <a class="bdp-action-tile" href="{{ route('bdp.sync.queue.index') }}"><span class="bdp-action-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="5" rx="1"/><path d="M7 9v4h10V9M3 16h18M7 20h10"/></svg></span><span><strong>Sync Queue</strong><small>Track queued and failed items</small></span></a>
 </div>
 
 <div class="bdp-dashboard-grid">
     <div class="bdp-card">
-        <div class="bdp-card-header"><h3 class="bdp-card-title">Sync Overview</h3><span class="bdp-pill muted">Live</span></div>
+        <div class="bdp-card-header"><h3 class="bdp-card-title">Sync Overview</h3><span class="bdp-pill muted">Current status</span></div>
         <div style="display:flex;gap:22px;align-items:center;flex-wrap:wrap">
-            <div class="bdp-donut"><div class="bdp-donut-inner"><strong>{{ $stats['all'] ?? 0 }}</strong><small>Total Products</small></div></div>
+            <div class="bdp-donut" style="background:conic-gradient(#22c55e 0 {{ $syncedPercent }}%, #e2e8f0 {{ $syncedPercent }}% 100%)" role="img" aria-label="{{ $syncedPercent }} percent of products synced"><div class="bdp-donut-inner"><strong>{{ $syncedPercent }}%</strong><small>Synced</small></div></div>
             <div class="bdp-legend" style="flex:1">
                 <div class="bdp-legend-row"><span><span class="bdp-dot" style="color:#22c55e;display:inline-block;margin-right:8px"></span>Synced</span><strong>{{ $stats['synced'] ?? 0 }} ({{ $syncedPercent }}%)</strong></div>
                 <div class="bdp-legend-row"><span><span class="bdp-dot" style="color:#f59e0b;display:inline-block;margin-right:8px"></span>Not Synced</span><strong>{{ $stats['not_synced'] ?? 0 }} ({{ $notSyncedPercent }}%)</strong></div>
@@ -55,7 +84,7 @@
     </div>
 
     <div class="bdp-card bdp-dashboard-card-short compact-natural">
-        <div class="bdp-card-header"><h3 class="bdp-card-title">Recent Import Activity</h3><a class="bdp-btn ghost" href="{{ route('bdp.api.logs') }}">View all</a></div>
+        <div class="bdp-card-header"><h3 class="bdp-card-title">Recent API Activity</h3><a class="bdp-btn ghost" href="{{ route('bdp.api.logs') }}">View all</a></div>
         <div class="bdp-activity">
             @forelse($recentLogs as $log)
                 <div class="bdp-activity-row">
@@ -71,7 +100,7 @@
                 </div>
             @empty
                 <div class="bdp-empty-state">
-                    <div><strong>No recent imports yet</strong><span>Start by importing products from CJ or check API logs after your next sync.</span></div>
+                    <div><strong>No recent API activity yet</strong><span>Import from CJ or connect your store to start seeing activity.</span></div>
                     <a class="bdp-btn light" href="{{ route('bdp.cj.import') }}">Import from CJ</a>
                 </div>
             @endforelse
@@ -140,5 +169,5 @@
     </div>
 </div>
 
-<div class="bdp-footer-note"><span>Recommended Balenco rule: landed cost + $20 margin, rounded to .99, minimum $39.99.</span><span>Last updated: {{ now()->format('H:i') }} ↻</span></div>
+<div class="bdp-footer-note"><span>Review product costs, inventory and shipping before syncing to your store.</span><a href="{{ route('bdp.settings') }}">Open pricing settings →</a></div>
 @endsection
