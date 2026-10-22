@@ -152,6 +152,13 @@
             ['label' => 'Admin Profile', 'route' => 'bdp.profile', 'match' => 'bdp.profile*', 'icon' => 'user'],
         ],
     ];
+    // Hide customer administration when the SaaS portal itself is disabled.
+    if (!config('saas.enabled', false)) {
+        $navGroups['Administration'] = array_values(array_filter(
+            $navGroups['Administration'],
+            fn ($item) => $item['route'] !== 'bdp.saas.customers'
+        ));
+    }
     $bdpInitials = collect(preg_split('/\s+/', trim((string) $bdpAdminProfileName)))
         ->filter()
         ->take(2)
