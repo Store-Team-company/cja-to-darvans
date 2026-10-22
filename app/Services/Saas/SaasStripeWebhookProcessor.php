@@ -148,9 +148,16 @@ class SaasStripeWebhookProcessor
         if (!$workspace) {
             return;
         }
-        $price = (string) ($subscription['items']['data'][0]['price']['id'] ?? '');
+        // Since Stripe API 2025-03-31.basil, renewal periods live on
+        // subscription items rather than the subscription object itself.
+        $items = $subscription['items']['data'] ?? [];
+        if (!is_array($items) || count($items) !== 1
+            || (int) ($items[0]['quantity'] ?? 1) !== 1) {
+            return;
+        }
+        $price = (string) ($items[0]['price']['id'] ?? '');
         $planCode = $this->plans->codeForPrice($price);
-        $periodEnd = $subscription['current_period_end'] ?? null;
+        $periodEnd = $items[0]['current_period_end'] ?? $subscription['current_period_end'] ?? null;
         if (!is_numeric($periodEnd) || (int) $periodEnd < 0) {
             $periodEnd = null;
         }
