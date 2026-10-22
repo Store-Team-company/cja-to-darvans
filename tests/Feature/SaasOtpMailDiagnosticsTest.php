@@ -7,7 +7,6 @@ use App\Models\SaasEmailOtpChallenge;
 use App\Models\SaasWorkspace;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Tests\TestCase;
@@ -68,7 +67,7 @@ class SaasOtpMailDiagnosticsTest extends TestCase
                 && ($context['event'] ?? '') === 'mail_configuration_invalid'
                 && ($context['account_id'] ?? null) === $user->id
                 && ($context['mailer'] ?? '') === 'smtp'
-                && !isset($context['email'], $context['code']);
+                && ! isset($context['email'], $context['code']);
         });
     }
 
@@ -125,7 +124,8 @@ class SaasOtpMailDiagnosticsTest extends TestCase
     {
         $user = $this->customer();
         Log::spy();
-        Mail::swap(new class {
+        Mail::swap(new class
+        {
             public function to(): never
             {
                 throw new \RuntimeException('Sensitive simulated SMTP password email data');
@@ -140,12 +140,13 @@ class SaasOtpMailDiagnosticsTest extends TestCase
         $this->assertGuest();
         Log::shouldHaveReceived('warning')->once()->withArgs(function ($message, $context) use ($user) {
             $encoded = json_encode($context);
+
             return $message === 'datapilot.auth.otp'
                 && ($context['event'] ?? '') === 'transport_failed'
                 && ($context['exception_type'] ?? '') === \RuntimeException::class
                 && ($context['account_id'] ?? null) === $user->id
-                && !str_contains($encoded, 'Sensitive')
-                && !str_contains($encoded, $user->email);
+                && ! str_contains($encoded, 'Sensitive')
+                && ! str_contains($encoded, $user->email);
         });
     }
 
@@ -163,7 +164,8 @@ class SaasOtpMailDiagnosticsTest extends TestCase
         $oldChallenge = SaasEmailOtpChallenge::firstOrFail();
         $oldChallenge->update(['sent_at' => now()->subSeconds(61)]);
 
-        Mail::swap(new class {
+        Mail::swap(new class
+        {
             public function to(): never
             {
                 throw new \RuntimeException('Simulated SMTP failure');
@@ -190,8 +192,7 @@ class SaasOtpMailDiagnosticsTest extends TestCase
             ->assertSessionHasErrors('code');
         $this->assertGuest();
 
-        Log::shouldHaveReceived('info')->withArgs(fn ($message, $context) =>
-            $message === 'datapilot.auth.otp'
+        Log::shouldHaveReceived('info')->withArgs(fn ($message, $context) => $message === 'datapilot.auth.otp'
             && ($context['event'] ?? '') === 'account_not_eligible'
             && ($context['account_id'] ?? null) === $suspended->id
         )->once();
@@ -203,8 +204,7 @@ class SaasOtpMailDiagnosticsTest extends TestCase
         Log::spy();
         $this->requestCode($user)->assertRedirect(route('saas.otp.verify.form'));
         Mail::assertSent(SaasEmailOtpMail::class, 1);
-        Log::shouldHaveReceived('info')->withArgs(fn ($message, $context) =>
-            $message === 'datapilot.auth.otp'
+        Log::shouldHaveReceived('info')->withArgs(fn ($message, $context) => $message === 'datapilot.auth.otp'
             && ($context['event'] ?? '') === 'transport_accepted_unconfirmed'
             && ($context['account_id'] ?? null) === $user->id
         )->once();

@@ -1,4 +1,5 @@
 <?php
+
 /** AUTH-04 offline SiteGround updater preflight smoke test; never touches live. */
 declare(strict_types=1);
 
@@ -9,7 +10,7 @@ $target = $temporary.'/www/example.test/data-pilot-app';
 
 function auth04Check(bool $ok, string $message): void
 {
-    if (!$ok) {
+    if (! $ok) {
         throw new RuntimeException('AUTH-04 updater smoke FAIL: '.$message);
     }
 }
@@ -56,7 +57,7 @@ auth04Check($status === 0, 'read-only preflight: '.$text);
 auth04Check(str_contains($text, 'replace app/Services/Saas/SaasEmailOtpService.php'), 'service replacement');
 auth04Check(str_contains($text, 'replace app/Http/Controllers/Saas/SaasAuthController.php'), 'controller replacement');
 auth04Check(str_contains($text, 'add scripts/diagnose-siteground-auth04.php'), 'read-only CLI add');
-auth04Check(!is_dir(dirname($target).'/datapilot-private-backups'), 'read-only created a backup');
+auth04Check(! is_dir(dirname($target).'/datapilot-private-backups'), 'read-only created a backup');
 
 [$status, $text] = auth04Run([PHP_BINARY, $deployer,
     '--apply', '--backup-confirmed', '--target='.$target], $root);

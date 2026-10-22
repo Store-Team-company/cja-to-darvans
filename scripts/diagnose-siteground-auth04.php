@@ -17,9 +17,9 @@ if (PHP_SAPI !== 'cli') {
 }
 
 $root = realpath(dirname(__DIR__));
-if (!$root || !is_file($root.'/.env')
-    || !is_file($root.'/vendor/autoload.php')
-    || !is_file($root.'/bootstrap/app.php')) {
+if (! $root || ! is_file($root.'/.env')
+    || ! is_file($root.'/vendor/autoload.php')
+    || ! is_file($root.'/bootstrap/app.php')) {
     fwrite(STDERR, "AUTH-04: Run from a complete, existing PRIVATE Data Pilot installation.\n");
     exit(2);
 }
@@ -35,7 +35,7 @@ $host = (string) ($smtp['host'] ?? '');
 $port = $smtp['port'] ?? null;
 $rawEnv = (string) file_get_contents($root.'/.env');
 $envValue = static function (string $name) use ($rawEnv): string {
-    if (!preg_match('/^'.preg_quote($name, '/').'\s*=\s*(.*)\s*$/m', $rawEnv, $match)) {
+    if (! preg_match('/^'.preg_quote($name, '/').'\s*=\s*(.*)\s*$/m', $rawEnv, $match)) {
         return '';
     }
 
@@ -43,10 +43,10 @@ $envValue = static function (string $name) use ($rawEnv): string {
 };
 
 echo "DATA PILOT AUTH-04 SAFE DIAGNOSIS\n";
-echo "Laravel version: ".app()->version()."\n";
+echo 'Laravel version: '.app()->version()."\n";
 echo 'Config cached: '.(is_file($root.'/bootstrap/cache/config.php') ? 'YES' : 'NO')."\n";
-echo "Effective mailer: ".$driver."\n";
-echo "From address configured: ".(filter_var($cfg['from']['address'] ?? '', FILTER_VALIDATE_EMAIL) ? 'YES' : 'NO')."\n";
+echo 'Effective mailer: '.$driver."\n";
+echo 'From address configured: '.(filter_var($cfg['from']['address'] ?? '', FILTER_VALIDATE_EMAIL) ? 'YES' : 'NO')."\n";
 echo 'SMTP username set: '.(trim((string) ($smtp['username'] ?? '')) !== '' ? 'YES' : 'NO')."\n";
 echo 'SMTP password set: '.((string) ($smtp['password'] ?? '') !== '' ? 'YES' : 'NO')."\n";
 echo 'MAIL_URL configured: '.((string) ($smtp['url'] ?? '') !== '' ? 'YES' : 'NO')."\n";
@@ -68,10 +68,10 @@ $probeHost = $host;
 foreach ($argv as $arg) {
     if (str_starts_with($arg, '--probe-host=')) {
         $candidate = substr($arg, strlen('--probe-host='));
-        if (!$candidate
+        if (! $candidate
             || filter_var($candidate, FILTER_VALIDATE_IP)
-            || !filter_var($candidate, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME)
-            || !str_contains($candidate, '.')) {
+            || ! filter_var($candidate, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME)
+            || ! str_contains($candidate, '.')) {
             fwrite(STDERR, "AUTH-04: Invalid candidate hostname.\n");
             exit(2);
         }
@@ -102,7 +102,7 @@ if ($driver === 'failover' && array_intersect(
 )) {
     echo "STOP: failover can silently accept OTP emails into a log/array sink.\n";
 }
-if ($driver === 'smtp' && !$validPort) {
+if ($driver === 'smtp' && ! $validPort) {
     echo "STOP: SMTP port outside valid 1..65535 range; correct private .env and clear config cache.\n";
 }
 if ($probeHost !== '' && $driver === 'smtp') {
@@ -158,6 +158,7 @@ if ($probeHost !== '' && $driver === 'smtp') {
                             return $response;
                         }
                     }
+
                     return '';
                 };
                 $welcome = $readReply($conn);
@@ -195,7 +196,7 @@ try {
     echo 'AUTH-03 migration applied: '.($migrationApplied ? 'YES' : 'NO')."\n";
 
     if (in_array('--account', $argv, true)) {
-        echo "Enter account email privately (not logged or printed in report): ";
+        echo 'Enter account email privately (not logged or printed in report): ';
         $email = mb_strtolower(trim((string) fgets(STDIN)));
         $account = \App\Models\User::where('email', $email)->first();
         unset($email);
@@ -223,7 +224,7 @@ try {
         }
     }
 } catch (\Throwable $e) {
-    echo "Database/auth inspection could not complete (error class only): ".get_class($e)."\n";
+    echo 'Database/auth inspection could not complete (error class only): '.get_class($e)."\n";
 }
 
 echo "IMPORTANT: A successful SMTP handoff does NOT prove mailbox delivery.\n";

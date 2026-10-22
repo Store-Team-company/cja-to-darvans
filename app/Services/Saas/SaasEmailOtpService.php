@@ -17,12 +17,12 @@ class SaasEmailOtpService
 {
     public function send(User $user, Request $request, string $purpose = 'login'): bool
     {
-        if (!in_array($purpose, ['register', 'login'], true)) {
+        if (! in_array($purpose, ['register', 'login'], true)) {
             return false;
         }
 
         $mailer = (string) config('mail.default', '');
-        if (!$this->isDeliveryCapableMailer($mailer)) {
+        if (! $this->isDeliveryCapableMailer($mailer)) {
             $this->diagnostic('mail_configuration_invalid', $user, $purpose, $mailer);
 
             return false;
@@ -54,7 +54,7 @@ class SaasEmailOtpService
             ]);
         });
 
-        if (!$challenge) {
+        if (! $challenge) {
             $this->diagnostic('resend_cooldown', $user, $purpose, $mailer);
 
             return false;
@@ -127,7 +127,7 @@ class SaasEmailOtpService
 
     private function isDeliveryCapableMailer(string $mailer): bool
     {
-        if (!filter_var(config('mail.from.address'), FILTER_VALIDATE_EMAIL)) {
+        if (! filter_var(config('mail.from.address'), FILTER_VALIDATE_EMAIL)) {
             return false;
         }
 
@@ -150,8 +150,8 @@ class SaasEmailOtpService
                 }
             }
 
-            if ($host === '' || !filter_var($host, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME)
-                || !is_numeric($port) || !ctype_digit((string) $port)
+            if ($host === '' || ! filter_var($host, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME)
+                || ! is_numeric($port) || ! ctype_digit((string) $port)
                 || (int) $port < 1 || (int) $port > 65535) {
                 return false;
             }
@@ -167,7 +167,7 @@ class SaasEmailOtpService
             return $fallbacks !== [] && count($fallbacks) === count(array_filter(
                 $fallbacks,
                 fn ($name) => is_string($name)
-                    && !in_array($name, ['log', 'array', 'failover', 'roundrobin'], true)
+                    && ! in_array($name, ['log', 'array', 'failover', 'roundrobin'], true)
                     && $this->isDeliveryCapableMailer($name)
             ));
         }
@@ -179,18 +179,18 @@ class SaasEmailOtpService
     public function verify(Request $request, string $code): ?User
     {
         $publicId = $request->session()->get('saas_otp_public_id');
-        if (!is_string($publicId) || $publicId === '' || !preg_match('/^[a-f0-9-]{36}$/iD', $publicId)) {
+        if (! is_string($publicId) || $publicId === '' || ! preg_match('/^[a-f0-9-]{36}$/iD', $publicId)) {
             return null;
         }
 
         return DB::transaction(function () use ($publicId, $code): ?User {
             $otp = SaasEmailOtpChallenge::where('public_id', $publicId)->lockForUpdate()->first();
-            if (!$otp || $otp->consumed_at || $otp->expires_at->isPast() || $otp->attempts >= 5) {
+            if (! $otp || $otp->consumed_at || $otp->expires_at->isPast() || $otp->attempts >= 5) {
                 return null;
             }
 
             $otp->attempts += 1;
-            if (!Hash::check($code, $otp->code_hash)) {
+            if (! Hash::check($code, $otp->code_hash)) {
                 if ($otp->attempts >= 5) {
                     $otp->consumed_at = now();
                 }
@@ -203,7 +203,7 @@ class SaasEmailOtpService
             $otp->save();
 
             $user = User::find($otp->user_id);
-            if (!$user || !DB::table('saas_workspace_memberships as m')
+            if (! $user || ! DB::table('saas_workspace_memberships as m')
                 ->join('saas_workspaces as w', 'w.id', '=', 'm.workspace_id')
                 ->where('m.user_id', $user->id)
                 ->where('m.status', 'active')
@@ -211,7 +211,7 @@ class SaasEmailOtpService
                 ->exists()) {
                 return null;
             }
-            if (!$user->hasVerifiedEmail()) {
+            if (! $user->hasVerifiedEmail()) {
                 $user->markEmailAsVerified();
             }
 

@@ -113,7 +113,7 @@ class SaasAuthController extends Controller
         ]);
 
         $user = $otp->verify($request, $data['code']);
-        if (!$user) {
+        if (! $user) {
             return back()->withErrors([
                 'code' => 'Incorrect or expired code. You have up to five attempts. Request a new code if necessary.',
             ]);
