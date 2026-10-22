@@ -3,6 +3,7 @@
 return [
     'login_username' => env('BDP_LOGIN_USERNAME', 'admin'),
     'login_password' => env('BDP_LOGIN_PASSWORD', ''),
+    'login_password_hash' => env('BDP_LOGIN_PASSWORD_HASH', ''),
     'default_brand' => 'Balenco',
     'default_status' => 'published',
     'default_categories' => 'Women\'s Flats',
