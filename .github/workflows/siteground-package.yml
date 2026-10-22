@@ -15,6 +15,10 @@ on:
       - 'routes/**'
       - 'scripts/build-siteground.php'
       - 'scripts/build-siteground-ui-update.php'
+      - 'scripts/build-siteground-saas-update.php'
+      - 'scripts/apply-siteground-saas-update.php'
+      - 'scripts/verify-siteground-saas-update.php'
+      - 'docs/SITEGROUND_SAAS_INCREMENTAL_UPDATE.md'
       - 'docs/SITEGROUND_UI_UPDATE.md'
       - 'composer.*'
       - 'phpunit.xml'
@@ -51,6 +55,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: shivammathur/setup-php@v2
         with:
           php-version: '8.2'
@@ -62,6 +68,17 @@ jobs:
         run: php scripts/build-siteground.php
       - name: Build safe UI-only SiteGround update
         run: php scripts/build-siteground-ui-update.php
+      - name: Build and smoke-check incremental SaaS update
+        run: |
+          php scripts/build-siteground-saas-update.php
+          php scripts/verify-siteground-saas-update.php
+      - name: Publish SaaS changes-only update
+        uses: actions/upload-artifact@v4
+        with:
+          name: data-pilot-saas-changes-only
+          path: dist/data-pilot-saas-changes-only.zip
+          if-no-files-found: error
+          retention-days: 7
       - name: Publish UI-only update
         uses: actions/upload-artifact@v4
         with:
