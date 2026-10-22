@@ -50,6 +50,7 @@ final class SaasEntitlements
             'import' => $workspace->products()->count() < $this->limit($workspace, 'product_limit'),
             'connect_store' => $workspace->stores()->count() < $this->limit($workspace, 'store_limit'),
             'invite_member' => $workspace->members()->wherePivot('status', 'active')->count() < $this->limit($workspace, 'seat_limit'),
+            'connect_cj' => true,
             'publish' => true,
             default => false,
         };
