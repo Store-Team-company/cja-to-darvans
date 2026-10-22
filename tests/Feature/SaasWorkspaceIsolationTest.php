@@ -76,7 +76,7 @@ class SaasWorkspaceIsolationTest extends TestCase
             'email' => 'merchant@example.test',
             'password' => 'SafePasswordExample123',
             'password_confirmation' => 'SafePasswordExample123',
-        ])->assertRedirect(route('saas.otp.verify.form'));
+        ])->assertRedirect(route('saas.login'));
 
         $user = User::where('email', 'merchant@example.test')->firstOrFail();
         $this->assertGuest();
@@ -84,7 +84,7 @@ class SaasWorkspaceIsolationTest extends TestCase
         $this->assertDatabaseHas('saas_workspace_memberships', [
             'user_id' => $user->id, 'role' => 'owner', 'status' => 'active',
         ]);
-        Mail::assertSent(SaasEmailOtpMail::class, 1);
+        Mail::assertNothingSent();
 
         $workspace = SaasWorkspace::firstOrFail();
         $this->get(route('saas.workspace.dashboard', ['workspace' => $workspace->public_id]))

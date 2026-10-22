@@ -5,6 +5,7 @@ use App\Http\Controllers\BalencoCjaWooApiController;
 use App\Http\Controllers\BdpCategoryMappingController;
 use App\Http\Controllers\BdpProfileController;
 use App\Http\Controllers\BdpSettingsController;
+use App\Http\Controllers\Saas\SaasCustomerAdminController;
 use App\Http\Controllers\BdpAiPromptSettingsController;
 use App\Http\Middleware\BalencoDataPilotAuth;
 use Illuminate\Support\Facades\Route;
@@ -84,6 +85,12 @@ Route::middleware([BalencoDataPilotAuth::class])->name('bdp.')->group(function (
 
     // Existing views and controller methods rely on these named routes.
     // Keep all mutating operations POST-only and behind dashboard authentication.
+    Route::get('/saas-customers', [SaasCustomerAdminController::class, 'index'])
+        ->middleware(\App\Http\Middleware\EnsureSaasEnabled::class)->name('saas.customers');
+    Route::post('/saas-customers/{customer}/approve', [SaasCustomerAdminController::class, 'approve'])
+        ->middleware([\App\Http\Middleware\EnsureSaasEnabled::class, 'throttle:10,1'])
+        ->name('saas.customers.approve');
+
     Route::get('/profile', [BdpProfileController::class, 'index'])->name('profile');
     Route::post('/profile', [BdpProfileController::class, 'update'])->name('profile.update');
 

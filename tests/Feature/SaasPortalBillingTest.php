@@ -501,7 +501,7 @@ class SaasPortalBillingTest extends TestCase
             'email' => 'Owner@Example.Test',
             'password' => 'StrongPasswordTest123',
             'password_confirmation' => 'StrongPasswordTest123',
-        ])->assertRedirect(route('saas.otp.verify.form'));
+        ])->assertRedirect(route('saas.login'));
 
         $this->assertDatabaseHas('users', ['email' => 'owner@example.test']);
         $this->post(route('saas.register.submit'), [
