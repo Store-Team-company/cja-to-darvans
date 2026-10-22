@@ -12,7 +12,7 @@ class DatapilotConnectorServiceProvider extends ServiceProvider
 
     public function register(): void
     {
-        // No global database connections or customer API secrets.
+        $this->mergeConfigFrom(dirname(__DIR__, 2).'/config/datapilot.php', 'datapilot-connector');
     }
 
     public function boot(): void
@@ -21,6 +21,7 @@ class DatapilotConnectorServiceProvider extends ServiceProvider
             ->setNamespace('plugins/datapilot-connector')
             ->loadAndPublishConfigurations(['permissions'])
             ->loadAndPublishViews()
+            ->loadMigrations()
             ->loadRoutes(['web']);
 
         DashboardMenu::default()->beforeRetrieving(function (): void {

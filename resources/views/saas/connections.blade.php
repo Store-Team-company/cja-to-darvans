@@ -20,7 +20,7 @@
     </div>
     <div class="card">
         <div class="split"><h2>Botble stores</h2><span class="tag">{{ $stores->count() }} saved</span></div>
-        <p>Register the public HTTPS domain of a Botble store you own. Secure pairing with the Data Pilot Botble Connector is under development.</p>
+        <p>Register the public HTTPS domain of a Botble store you own. Install the Data Pilot Botble Connector plugin on your store, then pair it with a single-use code.</p>
         @if($role === 'owner' && $activeSubscription)
         <form method="post" action="{{ route('saas.workspace.connections.botble.add', $workspace->public_id) }}">@csrf
             <div class="form-field"><label for="store_name">Store name</label><input id="store_name" name="name" placeholder="My Botble Shop" maxlength="150" required value="{{ old('name') }}">@error('name')<span class="error">{{ $message }}</span>@enderror</div>
@@ -30,17 +30,33 @@
         @elseif($role !== 'owner')<p class="micro">Only workspace owners can register Botble stores.</p>
         @else<p class="alert">Activate a plan before registering a store.</p>@endif
         <div style="margin-top:20px">
+        @if(session('pairing_code'))
+        <div class="alert ok">
+            <strong>One-time Botble pairing code (expires in 10 minutes)</strong>
+            <p class="micro">Store ID: {{ session('pairing_store') }}</p>
+            <p style="overflow-wrap:anywhere;font-family:monospace;font-size:14px;color:#123246">{{ session('pairing_code') }}</p>
+            <p class="micro">This code is displayed once. Paste it into the Data Pilot Connector settings in the Botble admin panel.</p>
+        </div>
+        @endif
         @forelse($stores as $store)
             <div class="card" style="box-shadow:none;padding:13px;margin:8px 0">
                 <div class="split"><strong>{{ $store->name }}</strong><span class="tag {{ $store->status === 'connected' ? 'good' : 'off' }}">{{ str_replace('_', ' ', ucfirst($store->status)) }}</span></div>
                 <div class="micro">{{ $store->base_url }}</div>
-                @if($role === 'owner' && $store->status !== 'connected')
-                <form method="post" action="{{ route('saas.workspace.connections.botble.remove', ['workspace' => $workspace->public_id, 'store' => $store->id]) }}" style="margin-top:8px">@csrf @method('DELETE')<button class="btn btn-sm" type="submit">Remove unpaired store</button></form>
+                <div class="micro">Store ID: {{ $store->public_id }} · Workspace ID: {{ $workspace->public_id }}</div>
+                @if($role === 'owner')
+                    @if($store->status === 'connected')
+                    <form method="post" action="{{ route('saas.workspace.connections.botble.revoke', ['workspace' => $workspace->public_id, 'store' => $store->id]) }}" style="margin-top:8px">@csrf<button class="btn btn-sm" type="submit">Revoke pairing</button></form>
+                    @elseif($activeSubscription)
+                    <form method="post" action="{{ route('saas.workspace.connections.botble.pair-code', ['workspace' => $workspace->public_id, 'store' => $store->id]) }}" style="margin-top:8px">@csrf<button class="btn btn-sm" type="submit">Generate one-time pairing code</button></form>
+                    @endif
+                    @if($store->status !== 'connected')
+                    <form method="post" action="{{ route('saas.workspace.connections.botble.remove', ['workspace' => $workspace->public_id, 'store' => $store->id]) }}" style="margin-top:8px">@csrf @method('DELETE')<button class="btn btn-sm" type="submit">Remove unpaired store</button></form>
+                    @endif
                 @endif
             </div>
         @empty<div class="empty">No Botble stores registered yet.</div>@endforelse
         </div>
-        <p class="micro mt">A registered store is not connected until the plugin securely proves ownership. Product publishing is disabled.</p>
+        <p class="micro mt">Only the actual Botble administrator should enter the pairing code. Paid workspace access is required; product publishing remains disabled.</p>
     </div>
 </div>
 @endsection
