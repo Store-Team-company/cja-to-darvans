@@ -48,20 +48,13 @@ class BalencoDataPilotController extends Controller
         }
 
         
-        // BDP_SYNC_CLOSE_REDIRECT_START
-        if ($request->boolean('redirect_after_sync')) {
-            return redirect()
-                ->route('bdp.products')
-                ->with('success', 'Product synced and closed successfully.');
-        }
-        // BDP_SYNC_CLOSE_REDIRECT_END
-
         return back()->with('error', 'Invalid username or password.')->onlyInput('username');
     }
 
     public function logout(Request $request)
     {
         $request->session()->forget('bdp_logged_in');
+        $request->session()->invalidate();
         $request->session()->regenerateToken();
 
         return redirect()->route('bdp.login.form')->with('success', 'Logged out successfully.');
