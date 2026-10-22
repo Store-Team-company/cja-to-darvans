@@ -3,10 +3,13 @@
 namespace Tests\Feature;
 
 use Illuminate\Support\Facades\Route;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 class CjaIntegrationSecurityTest extends TestCase
 {
+    use RefreshDatabase;
+
     public function test_product_import_and_management_routes_are_registered(): void
     {
         foreach ([
