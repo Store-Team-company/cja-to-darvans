@@ -1,7 +1,10 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Verify your email | Data Pilot</title><style>body{font:16px/1.6 system-ui;color:#152138;max-width:580px;padding:40px 20px;margin:auto}button{padding:12px 19px;background:#12203c;border:0;border-radius:9px;color:#fff;font-weight:750}</style></head><body>
-<h1>Verify your email address</h1>
-<p>We sent a verification link to your email. Please confirm your address before accessing your workspace.</p>
-@if(session('status') === 'verification-link-sent')<p role="status">Another verification link has been sent.</p>@endif
-<form method="post" action="{{ route('saas.verification.send') }}">@csrf<button type="submit">Resend verification email</button></form>
-<form method="post" action="{{ route('saas.logout') }}" style="margin-top:18px">@csrf<button type="submit">Sign out</button></form>
-</body></html>
+@extends('saas.layout')
+@section('title', 'Verify email')
+@section('content')
+<div class="auth-wrap"><div class="card">
+    <span class="eyebrow">One quick step</span><h1 style="margin:10px 0">Verify your email</h1><p>We sent a verification link to {{ auth()->user()->email }}. Confirm your address before accessing your workspace.</p>
+    @if(session('status') === 'verification-link-sent')<div class="alert ok" role="status">We sent another verification link.</div>@endif
+    <form method="post" action="{{ route('saas.verification.send') }}">@csrf<button type="submit" class="btn btn-primary auth-submit">Resend verification email</button></form>
+    <form method="post" action="{{ route('saas.logout') }}">@csrf<button class="btn auth-submit" type="submit">Sign out</button></form>
+</div></div>
+@endsection
