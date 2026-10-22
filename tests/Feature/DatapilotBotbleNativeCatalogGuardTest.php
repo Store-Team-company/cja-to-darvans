@@ -48,8 +48,9 @@ class DatapilotBotbleNativeCatalogGuardTest extends TestCase
             'status' => 'paired',
         ]);
 
-        return IncomingDraft::query()->create([
-            'pairing_id' => $pair->getKey(),
+        $draft = new IncomingDraft();
+        $draft->fill([
+
             'idempotency_key' => (string) Str::uuid(),
             'source_product_id' => 'CJ00001',
             'title' => 'QA Only',
@@ -65,6 +66,10 @@ class DatapilotBotbleNativeCatalogGuardTest extends TestCase
             ],
             'status' => 'pending_review',
         ]);
+        $draft->pairing_id = $pair->getKey();
+        $draft->save();
+
+        return $draft;
     }
 
     public function test_catalog_writes_are_disabled_by_default(): void
