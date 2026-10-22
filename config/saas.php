@@ -1,10 +1,31 @@
 <?php
 
 return [
-    // Deliberately off on all existing single-store deployments.
-    // Enabling this does NOT enable paid imports; billing gates come later.
+    // Existing single-store deployments stay unchanged unless explicitly enabled.
     'enabled' => (bool) env('SAAS_ENABLED', false),
-    // Do not publicly accept accounts before Stripe and isolation QA.
     'registration_enabled' => (bool) env('SAAS_REGISTRATION_ENABLED', false),
+    'billing_enabled' => (bool) env('SAAS_BILLING_ENABLED', false),
     'public_name' => env('SAAS_PUBLIC_NAME', 'Data Pilot'),
+
+    // Stripe LIVE/TEST keys belong only in the server's private .env.
+    // Price IDs must be created and configured in Stripe before checkout works.
+    'stripe_secret' => env('STRIPE_SECRET_KEY', ''),
+    'stripe_webhook_secret' => env('STRIPE_WEBHOOK_SECRET', ''),
+    'plans' => [
+        'starter' => [
+            'name' => 'Starter', 'price_label' => '$19', 'product_limit' => 250,
+            'store_limit' => 1, 'seat_limit' => 2, 'sync_label' => 'Manual sync',
+            'stripe_price_id' => env('STRIPE_PRICE_STARTER', ''),
+        ],
+        'growth' => [
+            'name' => 'Growth', 'price_label' => '$49', 'product_limit' => 2000,
+            'store_limit' => 2, 'seat_limit' => 5, 'sync_label' => 'Scheduled sync',
+            'stripe_price_id' => env('STRIPE_PRICE_GROWTH', ''),
+        ],
+        'agency' => [
+            'name' => 'Agency', 'price_label' => '$99', 'product_limit' => 5000,
+            'store_limit' => 5, 'seat_limit' => 15, 'sync_label' => 'Priority sync',
+            'stripe_price_id' => env('STRIPE_PRICE_AGENCY', ''),
+        ],
+    ],
 ];

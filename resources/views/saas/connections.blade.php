@@ -1,0 +1,46 @@
+@extends('saas.layout')
+@section('title', 'Connections')
+@section('content')
+<div class="page-title"><span class="eyebrow">Your integrations</span><h1>Connections</h1><p>Configure your own CJ account and Botble destination stores. All saved connections belong exclusively to this workspace.</p></div>
+<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(320px,1fr))">
+    <div class="card">
+        <div class="split"><h2>CJ Dropshipping</h2><span class="tag {{ $cjConnection?->status === 'connected' ? 'good' : 'off' }}">{{ str_replace('_', ' ', ucfirst($cjConnection?->status ?? 'Not connected')) }}</span></div>
+        <p>Your API key will be stored encrypted and never displayed. CJ API verification and product import are not enabled in this release.</p>
+        @if($role === 'owner' && $activeSubscription)
+        <form method="post" action="{{ route('saas.workspace.connections.cj.save', $workspace->public_id) }}">@csrf
+            <div class="form-field"><label for="cj_api_key">{{ $cjConnection && $cjConnection->status !== 'disconnected' ? 'Replace CJ API key' : 'CJ API key' }}</label><input type="password" id="cj_api_key" name="api_key" autocomplete="off" required minlength="16" maxlength="512" placeholder="Enter your own CJ API key">@error('api_key')<span class="error" role="alert">{{ $message }}</span>@enderror</div>
+            <button class="btn btn-primary" type="submit">Save key for verification</button>
+        </form>
+        @if($cjConnection && $cjConnection->status !== 'disconnected')
+        <form method="post" action="{{ route('saas.workspace.connections.cj.remove', $workspace->public_id) }}" style="margin-top:14px">@csrf @method('DELETE')<button class="btn btn-sm" type="submit">Remove saved key</button></form>
+        @endif
+        @elseif($role !== 'owner')<p class="micro">Only your workspace owner can manage CJ credentials.</p>
+        @else<p class="alert">Activate a monthly subscription before adding CJ credentials.</p>@endif
+        <p class="micro mt">Saving a key does not activate the CJ integration or make API requests. Connection testing follows official multi-merchant approval.</p>
+    </div>
+    <div class="card">
+        <div class="split"><h2>Botble stores</h2><span class="tag">{{ $stores->count() }} saved</span></div>
+        <p>Register the public HTTPS domain of a Botble store you own. Secure pairing with the Data Pilot Botble Connector is under development.</p>
+        @if($role === 'owner' && $activeSubscription)
+        <form method="post" action="{{ route('saas.workspace.connections.botble.add', $workspace->public_id) }}">@csrf
+            <div class="form-field"><label for="store_name">Store name</label><input id="store_name" name="name" placeholder="My Botble Shop" maxlength="150" required value="{{ old('name') }}">@error('name')<span class="error">{{ $message }}</span>@enderror</div>
+            <div class="form-field"><label for="store_url">Store URL</label><input id="store_url" name="base_url" type="url" placeholder="https://shop.example.com" maxlength="255" required value="{{ old('base_url') }}">@error('base_url')<span class="error" role="alert">{{ $message }}</span>@enderror</div>
+            <button type="submit" class="btn btn-primary">Register store for pairing</button>
+        </form>
+        @elseif($role !== 'owner')<p class="micro">Only workspace owners can register Botble stores.</p>
+        @else<p class="alert">Activate a plan before registering a store.</p>@endif
+        <div style="margin-top:20px">
+        @forelse($stores as $store)
+            <div class="card" style="box-shadow:none;padding:13px;margin:8px 0">
+                <div class="split"><strong>{{ $store->name }}</strong><span class="tag {{ $store->status === 'connected' ? 'good' : 'off' }}">{{ str_replace('_', ' ', ucfirst($store->status)) }}</span></div>
+                <div class="micro">{{ $store->base_url }}</div>
+                @if($role === 'owner' && $store->status !== 'connected')
+                <form method="post" action="{{ route('saas.workspace.connections.botble.remove', ['workspace' => $workspace->public_id, 'store' => $store->id]) }}" style="margin-top:8px">@csrf @method('DELETE')<button class="btn btn-sm" type="submit">Remove unpaired store</button></form>
+                @endif
+            </div>
+        @empty<div class="empty">No Botble stores registered yet.</div>@endforelse
+        </div>
+        <p class="micro mt">A registered store is not connected until the plugin securely proves ownership. Product publishing is disabled.</p>
+    </div>
+</div>
+@endsection
