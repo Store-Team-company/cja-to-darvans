@@ -106,7 +106,7 @@ class CatalogImportService
             // Categories are native Botble IDs selected/mapped by the store.
             // Reject unknown IDs instead of silently dropping associations.
             if (!empty($payload['category_ids'])) {
-                $categoryClass = \\Botble\\Ecommerce\\Models\\ProductCategory::class;
+                $categoryClass = \Botble\Ecommerce\Models\ProductCategory::class;
                 if (!class_exists($categoryClass) || !method_exists($product, 'categories')) {
                     throw new RuntimeException('Category mapping not supported by this Botble version.');
                 }
