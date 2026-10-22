@@ -87,9 +87,18 @@ class SaasAuthController extends Controller
         $request->session()->put('saas_otp_email', $email);
 
         $user = User::where('email', $email)->first();
-        if ($user && DB::table('saas_workspace_memberships')
-            ->where('user_id', $user->id)->where('status', 'active')->exists()) {
+        $eligible = $user && DB::table('saas_workspace_memberships as m')
+            ->join('saas_workspaces as w', 'w.id', '=', 'm.workspace_id')
+            ->where('m.user_id', $user->id)
+            ->where('m.status', 'active')
+            ->where('w.status', '!=', 'suspended')
+            ->exists();
+        if ($eligible) {
             $otp->send($user, $request, 'login');
+        } else {
+            // Internal-only, non-secret diagnostics. Never distinguish these
+            // cases in the public response or include the requested email.
+            $otp->reportIneligible($user);
         }
 
         // Identical response whether the email exists or not.
