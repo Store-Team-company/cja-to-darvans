@@ -20,6 +20,12 @@ class SaasEmailOtpAuthTest extends TestCase
         parent::setUp();
         config()->set('saas.enabled', true);
         config()->set('saas.registration_enabled', true);
+        // The application rejects non-delivering array/log mailers; fake the
+        // outbound transport while keeping production-like SMTP configuration.
+        config()->set('mail.default', 'smtp');
+        config()->set('mail.mailers.smtp.host', 'smtp.example.org');
+        config()->set('mail.mailers.smtp.port', 587);
+        config()->set('mail.from.address', 'no-reply@test-mailer.invalid');
         Mail::fake();
     }
 
