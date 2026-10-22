@@ -18,6 +18,16 @@ class Plugin extends PluginOperationAbstract
 
     public static function remove(): void
     {
-        // The foundation has no plugin-owned tables or customer data to delete.
+        // Permanent uninstall only: purge signing keys and connector-owned
+        // snapshots/mappings. Deactivation never deletes any data.
+        foreach ([
+            'datapilot_connector_variant_mappings',
+            'datapilot_connector_product_mappings',
+            'datapilot_connector_drafts',
+            'datapilot_connector_nonces',
+            'datapilot_connector_pairings',
+        ] as $table) {
+            \Illuminate\Support\Facades\Schema::dropIfExists($table);
+        }
     }
 }
