@@ -31,6 +31,8 @@ STRIPE_PRICE_AGENCY=price_...
 
 Create Stripe TEST recurring monthly prices for Starter/Growth/Agency. **Amounts shown in templates are currently proposed $19/$49/$99**, not live claims; configure actual Stripe recurring prices before checkout. Always verify amount/currency in Stripe Dashboard before enabling checkout and align public displayed amounts with Stripe prices.
 
+Duplicate checkout prevention: Data Pilot records one pending Stripe-hosted Checkout URL per workspace and reuses it. Owners can expire an open Checkout via Stripe before selecting another plan. Stripe's `checkout.session.expired` webhook clears only the matching pending session.
+
 Webhook endpoint: \`https://YOUR-STAGING-DOMAIN/api/saas/stripe/webhook\`.
 Select events \`checkout.session.completed\`, \`customer.subscription.created\`, \`customer.subscription.updated\`, \`customer.subscription.deleted\`. Use Stripe TEST destination signing secret, never a live secret in staging.
 

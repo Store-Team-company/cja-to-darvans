@@ -41,6 +41,14 @@ class SaasStripeGateway
         ]);
     }
 
+    public function expireCheckout(string $sessionId): array
+    {
+        if (!preg_match('/^cs_(test_|live_)[A-Za-z0-9_]+$/D', $sessionId)) {
+            throw new RuntimeException('Invalid checkout session reference.');
+        }
+        return $this->request('POST', 'checkout/sessions/'.rawurlencode($sessionId).'/expire');
+    }
+
     public function subscription(string $subscriptionId): array
     {
         if (!preg_match('/^sub_[A-Za-z0-9_]+$/D', $subscriptionId)) {

@@ -107,6 +107,32 @@ class SaasBillingController extends Controller
         return redirect()->away($url);
     }
 
+    public function abandonCheckout(Request $request, SaasWorkspace $workspace, SaasStripeGateway $stripe): RedirectResponse
+    {
+        app(WorkspacePermissions::class)->authorize($request->user(), $workspace, 'manage_billing');
+        try {
+            \Illuminate\Support\Facades\DB::transaction(function () use ($workspace, $stripe): void {
+                SaasWorkspace::whereKey($workspace->id)->lockForUpdate()->firstOrFail();
+                $bill = $workspace->billing()->lockForUpdate()->first();
+                if (!$bill || !$bill->pending_checkout_id) {
+                    return;
+                }
+                $result = $stripe->expireCheckout($bill->pending_checkout_id);
+                if (($result['status'] ?? '') !== 'expired' || ($result['id'] ?? '') !== $bill->pending_checkout_id) {
+                    throw new RuntimeException('Unable to expire the open checkout.');
+                }
+                $bill->pending_checkout_id = null;
+                $bill->pending_checkout_url = null;
+                $bill->pending_checkout_expires_at = null;
+                $bill->save();
+            });
+        } catch (RuntimeException) {
+            return back()->with('error', 'Could not cancel the pending Stripe checkout. Check whether it has already completed.');
+        }
+
+        return back()->with('status', 'Pending checkout canceled. You can select a different plan.');
+    }
+
     public function portal(Request $request, SaasWorkspace $workspace, SaasStripeGateway $stripe, SaasEntitlements $entitlements): RedirectResponse
     {
         app(WorkspacePermissions::class)->authorize($request->user(), $workspace, 'manage_billing');

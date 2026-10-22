@@ -20,6 +20,14 @@
     <form action="{{ route('saas.workspace.billing.portal', $workspace->public_id) }}" method="post">@csrf<button type="submit" class="btn">Manage subscription in Stripe →</button></form>
     @endif
 </div>
+@if($bill?->pending_checkout_id && $bill?->pending_checkout_expires_at?->isFuture() && !$activeSubscription && $role === 'owner')
+<div class="alert">
+    <strong>You have an open Stripe Checkout session.</strong> Selecting a plan below will resume that session rather than opening a second payment.
+    <form method="post" action="{{ route('saas.workspace.billing.cancel-checkout', $workspace->public_id) }}" style="margin-top:12px">@csrf
+        <button class="btn btn-sm" type="submit">Cancel pending checkout and choose again</button>
+    </form>
+</div>
+@endif
 @if(!config('saas.billing_enabled'))<div class="alert">Stripe billing is not enabled on this installation. Prices below are proposed, not yet available for purchase.</div>@endif
 <h2>Choose a plan</h2><p>All plans are monthly. Team members without billing permission cannot start checkout.</p>
 <div class="grid">

@@ -66,6 +66,8 @@ Route::prefix('app')->middleware([EnsureSaasEnabled::class])->name('saas.')->gro
                     Route::get('/billing', [SaasBillingController::class, 'show'])->name('billing');
                     Route::post('/billing/checkout', [SaasBillingController::class, 'checkout'])
                         ->middleware('throttle:6,1')->name('billing.checkout');
+                    Route::post('/billing/cancel-checkout', [SaasBillingController::class, 'abandonCheckout'])
+                        ->middleware('throttle:6,1')->name('billing.cancel-checkout');
                     Route::post('/billing/portal', [SaasBillingController::class, 'portal'])
                         ->middleware('throttle:6,1')->name('billing.portal');
                 });

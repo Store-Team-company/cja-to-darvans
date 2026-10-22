@@ -64,6 +64,40 @@ class SaasStripeWebhookProcessor
     {
         $type = $event['type'];
         $object = $event['data']['object'];
+        if ($type === 'checkout.session.expired') {
+            $workspaceKey = (string) ($object['client_reference_id'] ?? '');
+            if (($object['status'] ?? '') !== 'expired'
+                || ($object['metadata']['workspace_id'] ?? '') !== $workspaceKey
+                || !$workspaceKey || !is_string($object['id'] ?? null)) {
+                return;
+            }
+            $workspace = SaasWorkspace::where('public_id', $workspaceKey)->first();
+            if (!$workspace) {
+                return;
+            }
+
+            DB::transaction(function () use ($event, $workspace, $object): void {
+                $inserted = DB::table('saas_stripe_events')->insertOrIgnore([
+                    'stripe_event_id' => $event['id'],
+                    'event_type' => $event['type'],
+                    'processed_at' => now(),
+                    'created_at' => now(), 'updated_at' => now(),
+                ]);
+                if (!$inserted) {
+                    return;
+                }
+                $bill = SaasWorkspaceBilling::where('workspace_id', $workspace->id)
+                    ->lockForUpdate()->first();
+                if ($bill && $bill->pending_checkout_id === $object['id']) {
+                    $bill->pending_checkout_id = null;
+                    $bill->pending_checkout_url = null;
+                    $bill->pending_checkout_expires_at = null;
+                    $bill->save();
+                }
+            });
+            return;
+        }
+
         if (!in_array($type, [
             'checkout.session.completed',
             'customer.subscription.created',
