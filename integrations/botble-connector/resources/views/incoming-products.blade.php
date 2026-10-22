@@ -41,7 +41,9 @@ $variants = $payload['variants'] ?? [];
 <p><strong>CJ source ID:</strong> <code>{{ $draft->source_product_id }}</code>
 &nbsp; <strong>SKU:</strong> {{ $draft->sku ?: 'Missing' }}
 &nbsp; <strong>Variations:</strong> {{ count($variants) }}
-&nbsp; <strong>Received:</strong> {{ $draft->created_at?->format('Y-m-d H:i') }}</p>
+&nbsp; <strong>Received:</strong> {{ $draft->created_at?->format('Y-m-d H:i') }}
+&nbsp; <strong>Attempts:</strong> {{ $draft->import_attempts ?? 0 }}</p>
+@if($draft->last_import_error)<p role="alert" class="alert"><strong>Last failure:</strong> {{ $draft->last_import_error }}<br><small>Retry after correcting this issue.</small></p>@endif
 <p><strong>Workspace:</strong> {{ $draft->pairing?->workspace_public_id ?? 'Unknown' }}
 &nbsp; <strong>Store:</strong> {{ $draft->pairing?->store_public_id ?? 'Unknown' }}</p>
 @if($mapping)
@@ -55,7 +57,7 @@ $variants = $payload['variants'] ?? [];
 @endif
 <form method="post" action="{{ route('datapilot.connector.incoming.approve', $draft) }}" style="margin-top:15px">
 @csrf
-<button type="submit" @disabled(!config('datapilot-connector.catalog_import_enabled', false) || ($draft->pairing?->status !== 'paired')) onclick="return confirm('Create or update the native Botble draft product? Existing published catalog items will not be published automatically.');">Approve native draft import</button>
+<button type="submit" @disabled(!config('datapilot-connector.catalog_import_enabled', false) || ($draft->pairing?->status !== 'paired')) onclick="return confirm('Create or update the native Botble draft product? Existing published catalog items will not be published automatically.');">{{ $draft->status === 'failed' ? 'Retry native draft import' : 'Approve native draft import' }}</button>
 </form>
 </section>
 @empty
