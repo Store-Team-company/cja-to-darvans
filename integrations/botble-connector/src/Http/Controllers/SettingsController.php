@@ -60,7 +60,10 @@ class SettingsController extends Controller
             return back()->withErrors(['pairing' => 'Pairing was rejected. Check that the code is unused, the registered domain matches this Botble site and the subscription is active.']);
         }
 
-        $pair = new ConnectorPairing();
+        // Re-pairing the same Botble store rotates the old credential without
+        // violating the unique store ID or deleting prior staged drafts.
+        $pair = ConnectorPairing::query()->where('store_public_id', $data['store_id'])->first()
+            ?? new ConnectorPairing();
         $pair->workspace_public_id = $data['workspace_id'];
         $pair->store_public_id = $data['store_id'];
         $pair->shared_secret = $payload['shared_secret'];

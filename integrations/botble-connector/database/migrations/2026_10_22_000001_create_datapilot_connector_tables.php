@@ -12,7 +12,7 @@ return new class extends Migration
             $table->id();
             $table->uuid('workspace_public_id');
             $table->uuid('store_public_id')->unique();
-            $table->longText('shared_secret'); // encrypted Eloquent cast
+            $table->longText('shared_secret')->nullable(); // encrypted Eloquent cast, cleared on revoke
             $table->string('status', 20)->default('paired');
             $table->timestamp('paired_at');
             $table->timestamps();
