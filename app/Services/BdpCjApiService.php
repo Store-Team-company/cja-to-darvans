@@ -969,12 +969,26 @@ class BdpCjApiService
                 'status_code' => $status,
                 'authorized' => $success,
                 'message' => $success ? 'CJ API call successful.' : 'CJ API call failed.',
-                'request_body' => $request,
-                'response_body' => $response,
+                'request_body' => $this->redactSensitiveData($request),
+                'response_body' => $this->redactSensitiveData($response),
             ]);
         } catch (\Throwable $e) {
             // Never break importing because logging failed.
         }
+    }
+
+    protected function redactSensitiveData(array $data): array
+    {
+        $sensitive = ['apikey', 'accesstoken', 'refreshtoken', 'consumerkey', 'consumersecret', 'password', 'secret', 'token', 'authorization'];
+        foreach ($data as $key => $value) {
+            $normalized = strtolower(preg_replace('/[^a-zA-Z]/', '', (string) $key));
+            if (in_array($normalized, $sensitive, true)) {
+                $data[$key] = '[REDACTED]';
+            } elseif (is_array($value)) {
+                $data[$key] = $this->redactSensitiveData($value);
+            }
+        }
+        return $data;
     }
 
     protected function dateOrNull(?string $value)
