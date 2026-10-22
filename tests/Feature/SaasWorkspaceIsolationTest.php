@@ -64,6 +64,10 @@ class SaasWorkspaceIsolationTest extends TestCase
     public function test_signup_creates_a_private_workspace_and_requires_email_verification(): void
     {
         config()->set('saas.registration_enabled', true);
+        config()->set('mail.default', 'smtp');
+        config()->set('mail.mailers.smtp.host', 'smtp.example.org');
+        config()->set('mail.mailers.smtp.port', 587);
+        config()->set('mail.from.address', 'no-reply@test-mailer.invalid');
         Mail::fake();
 
         $this->post('/app/register', [
