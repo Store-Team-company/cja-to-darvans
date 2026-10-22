@@ -56,22 +56,46 @@
         @media(max-width:640px){.bdp-stats{grid-template-columns:1fr}.bdp-toolbar{align-items:stretch}.bdp-toolbar>*{width:100%}.bdp-hide-mobile{display:none}.bdp-page-title h1{font-size:25px}}
     
 
-/* BDP hide global header search on admin pages */
-.bdp-global-search,
-.bdp-header-search,
-.bdp-top-search,
-.bdp-navbar-search,
-.bdp-topbar-search,
-.bdp-search-box,
-.bdp-search-wrap{
-    display:none !important;
-}
-.bdp-topbar input[placeholder*="Search products"],
-.bdp-header input[placeholder*="Search products"],
-header input[placeholder*="Search products"]{
-    display:none !important;
-}
 
+        /* Consistent navigation, accessible focus and real global product search. */
+        .bdp-sidebar{overflow-y:auto;scrollbar-width:thin}
+        .bdp-nav{flex:1;min-height:0;overflow-y:auto;scrollbar-width:thin;padding-bottom:8px}
+        .bdp-sidebar-bottom{flex:0 0 auto}
+        .bdp-nav-label{margin:14px 10px 6px;font-weight:800}
+        .bdp-nav a{font-size:13px;min-height:43px;white-space:nowrap}
+        .bdp-nav a.active{background:#ebf1fd;box-shadow:inset 3px 0 0 var(--bdp-navy)}
+        .bdp-search{width:min(490px,43vw);height:44px}
+        .bdp-search input{width:100%;height:44px;padding:0 94px 0 44px}
+        .bdp-search svg{pointer-events:none}
+        .bdp-search-submit{position:absolute;right:5px;top:5px;bottom:5px;border:0;border-radius:9px;background:#f1f5f9;color:#334155;padding:0 14px;cursor:pointer;font-weight:750;font-size:12px}
+        .bdp-search-submit:hover{background:#e5edf6}
+        .bdp-icon-btn{flex-shrink:0;text-decoration:none;cursor:pointer}
+        .bdp-sidebar-backdrop{display:none}
+        .bdp-search :focus-visible,.bdp-nav a:focus-visible,.bdp-icon-btn:focus-visible,.bdp-sync-btn:focus-visible{outline:3px solid #93c5fd;outline-offset:2px}
+        .bdp-collapsed .bdp-nav a{position:relative}
+        .bdp-collapsed .bdp-nav a:focus-visible{outline-offset:-1px}
+        .bdp-actions-row{grid-template-columns:1.15fr 1.15fr 1fr 1fr 1fr}
+        @media(max-width:1300px){.bdp-actions-row{grid-template-columns:repeat(3,minmax(0,1fr))}}
+        @media(max-width:980px){
+            .bdp-sidebar-backdrop{display:block;position:fixed;inset:0;border:0;background:rgba(15,23,42,.42);z-index:19;opacity:0;visibility:hidden;pointer-events:none;transition:opacity .2s ease,visibility .2s ease}
+            .bdp-mobile-open .bdp-sidebar-backdrop{opacity:1;visibility:visible;pointer-events:auto}
+            .bdp-collapsed .bdp-sidebar{width:280px;padding:20px 18px}
+            .bdp-collapsed .bdp-brand{justify-content:flex-start}
+            .bdp-collapsed .bdp-brand span,.bdp-collapsed .bdp-nav span,.bdp-collapsed .bdp-nav-label{display:initial}
+            .bdp-collapsed .bdp-nav a{justify-content:flex-start;padding:12px 13px}
+            .bdp-topbar{gap:10px}
+            .bdp-search{width:min(480px,60vw)}
+            .bdp-actions-row{grid-template-columns:repeat(2,minmax(0,1fr))}
+        }
+        @media(max-width:640px){
+            .bdp-search{width:100%;min-width:0}
+            .bdp-search input{padding-right:62px}
+            .bdp-search-submit{padding:0 8px;font-size:11px}
+            .bdp-top-actions{gap:8px}
+            .bdp-avatar{width:32px;height:32px}
+            .bdp-actions-row{grid-template-columns:1fr}
+        }
+        @media(prefers-reduced-motion:reduce){.bdp-sidebar-backdrop{transition:none}.bdp-nav a,.bdp-actions-row .bdp-action-tile{transition:none}}
 
 /* BDP Data Pilot logo/favicon brand patch */
 .bdp-brand-logo-img{
@@ -89,37 +113,7 @@ header input[placeholder*="Search products"]{
 
 </style>
 
-<!-- BDP_HIDE_GLOBAL_HEADER_SEARCH_START -->
-<style>
-    /* Hide the global header search from the app shell. Page-level search/filter forms remain visible. */
-    .bdp-app-header input[placeholder*="Search products"],
-    .bdp-topbar input[placeholder*="Search products"],
-    .bdp-header input[placeholder*="Search products"],
-    header input[placeholder*="Search products"],
-    .bdp-global-search,
-    .bdp-header-search,
-    .bdp-topbar-search,
-    .bdp-search-shell {
-        display: none !important;
-    }
-</style>
-<script>
-document.addEventListener('DOMContentLoaded', function () {
-    document.querySelectorAll('input[placeholder]').forEach(function (input) {
-        var placeholder = (input.getAttribute('placeholder') || '').toLowerCase();
-        if (!placeholder.includes('search products')) return;
 
-        var wrapper = input.closest('form, .bdp-search, .bdp-header-search, .bdp-topbar-search, .bdp-global-search, .bdp-search-shell, .search, .header-search');
-        if (!wrapper) wrapper = input.parentElement;
-
-        // Only hide the global header search. Keep Products page filter search visible.
-        if (wrapper && !input.closest('#product-controls') && !input.closest('.bdp-products-search-card') && !input.closest('.bdp-card')) {
-            wrapper.style.setProperty('display', 'none', 'important');
-        }
-    });
-});
-</script>
-<!-- BDP_HIDE_GLOBAL_HEADER_SEARCH_END -->
 
 </head>
 <body>
@@ -137,31 +131,48 @@ document.addEventListener('DOMContentLoaded', function () {
     } catch (\Throwable $e) {}
 @endphp
 @php
-    $navItems = [
-        ['label' => 'Dashboard', 'route' => 'bdp.index', 'match' => 'bdp.index', 'icon' => 'home'],
-        ['label' => 'Products', 'route' => 'bdp.products', 'match' => 'bdp.products*', 'icon' => 'box'],
-        ['label' => 'Imports', 'route' => 'bdp.import.form', 'match' => 'bdp.import*', 'icon' => 'download'],
-        ['label' => 'CJ API Import', 'route' => 'bdp.cj.import', 'match' => 'bdp.cj.import*', 'icon' => 'sync'],
-        ['label' => 'CJ Settings', 'route' => 'bdp.cj.settings', 'match' => 'bdp.cj.settings*', 'icon' => 'settings'],
-        ['label' => 'Category Mapping', 'route' => 'bdp.categories.mapping', 'match' => 'bdp.categories*', 'icon' => 'grid'],
-        ['label' => 'API Logs', 'route' => 'bdp.api.logs', 'match' => 'bdp.api.logs*', 'icon' => 'file'],
-        ['label' => 'Admin Profile', 'route' => 'bdp.profile', 'match' => 'bdp.profile*', 'icon' => 'settings'],
+    // Only registered, working pages appear in navigation. Grouping is
+    // consistent on Dashboard, Products, Sync Queue and connection screens.
+    $navGroups = [
+        'Workspace' => [
+            ['label' => 'Dashboard', 'route' => 'bdp.index', 'match' => 'bdp.index', 'icon' => 'home'],
+            ['label' => 'Products', 'route' => 'bdp.products', 'match' => 'bdp.products*', 'icon' => 'box'],
+            ['label' => 'Import from CJ', 'route' => 'bdp.cj.import', 'match' => 'bdp.cj.import*', 'icon' => 'download'],
+            ['label' => 'CSV / Excel Import', 'route' => 'bdp.import.form', 'match' => 'bdp.import*', 'icon' => 'file'],
+            ['label' => 'Sync Queue', 'route' => 'bdp.sync.queue.index', 'match' => 'bdp.sync.queue.*', 'icon' => 'queue'],
+        ],
+        'Connections' => [
+            ['label' => 'CJ API Settings', 'route' => 'bdp.cj.settings', 'match' => 'bdp.cj.settings*', 'icon' => 'settings'],
+            ['label' => 'Category Mapping', 'route' => 'bdp.categories.mapping', 'match' => 'bdp.categories*', 'icon' => 'grid'],
+            ['label' => 'Store & Pricing', 'route' => 'bdp.settings', 'match' => 'bdp.settings*', 'icon' => 'settings'],
+        ],
+        'Administration' => [
+            ['label' => 'API Logs', 'route' => 'bdp.api.logs', 'match' => 'bdp.api.logs*', 'icon' => 'file'],
+            ['label' => 'Admin Profile', 'route' => 'bdp.profile', 'match' => 'bdp.profile*', 'icon' => 'user'],
+        ],
     ];
+    $bdpInitials = collect(preg_split('/\s+/', trim((string) $bdpAdminProfileName)))
+        ->filter()
+        ->take(2)
+        ->map(fn ($part) => mb_strtoupper(mb_substr((string) $part, 0, 1)))
+        ->implode('') ?: 'AD';
 @endphp
 <div class="bdp-app-shell" id="bdpAppShell">
+    <button class="bdp-sidebar-backdrop" type="button" aria-label="Close navigation" onclick="bdpToggleMobileSidebar(false)"></button>
     <div class="bdp-app">
-        <aside class="bdp-sidebar">
+        <aside class="bdp-sidebar" id="bdpSidebar">
             <a class="bdp-brand" href="{{ route('bdp.index') }}">
                 <img class="bdp-brand-logo-img" src="{{ asset('bdp-assets/data-pilot-icon.png') }}" alt="Data Pilot">
                 <span>Data Pilot</span>
             </a>
-            <button type="button" class="bdp-collapse-btn" onclick="bdpToggleSidebar()" title="Collapse sidebar">
+            <button type="button" class="bdp-collapse-btn" onclick="bdpToggleSidebar()" title="Collapse or expand sidebar" aria-label="Collapse or expand sidebar">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>
             </button>
-            <nav class="bdp-nav">
-                <div class="bdp-nav-label">Workspace</div>
-                @foreach($navItems as $item)
-                    <a href="{{ route($item['route']) }}" class="{{ request()->routeIs($item['match']) ? 'active' : '' }}">
+            <nav class="bdp-nav" aria-label="Main navigation">
+                @foreach($navGroups as $groupLabel => $groupItems)
+                    <div class="bdp-nav-label">{{ $groupLabel }}</div>
+                    @foreach($groupItems as $item)
+                    <a href="{{ route($item['route']) }}" class="{{ request()->routeIs($item['match']) ? 'active' : '' }}" @if(request()->routeIs($item['match'])) aria-current="page" @endif title="{{ $item['label'] }}">
                         @if($item['icon'] === 'home')<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m3 10 9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/></svg>@endif
                         @if($item['icon'] === 'box')<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8 12 3 3 8l9 5 9-5Z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg>@endif
                         @if($item['icon'] === 'download')<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 17v3h16v-3"/></svg>@endif
@@ -169,13 +180,12 @@ document.addEventListener('DOMContentLoaded', function () {
                         @if($item['icon'] === 'settings')<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.04.04a2 2 0 1 1-2.83 2.83l-.04-.04a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.06a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.88.34l-.04.04a2 2 0 1 1-2.83-2.83l.04-.04A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.06a1.7 1.7 0 0 0 1.55-1 1.7 1.7 0 0 0-.34-1.88l-.04-.04a2 2 0 1 1 2.83-2.83l.04.04A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.06a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.88-.34l.04-.04a2 2 0 1 1 2.83 2.83l-.04.04a1.7 1.7 0 0 0-.34 1.88c.2.62.79 1.04 1.43 1.04H21a2 2 0 1 1 0 4h-.06a1.7 1.7 0 0 0-1.54 1Z"/></svg>@endif
                         @if($item['icon'] === 'grid')<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>@endif
                         @if($item['icon'] === 'file')<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h8"/></svg>@endif
+                        @if($item['icon'] === 'queue')<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="5" rx="1"/><path d="M7 9v4h10V9M3 16h18M7 20h10"/></svg>@endif
+                        @if($item['icon'] === 'user')<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>@endif
                         <span>{{ $item['label'] }}</span>
                     </a>
+                    @endforeach
                 @endforeach
-                <div class="bdp-nav-label">Manage</div>
-                <a href="{{ route('bdp.settings') }}" class="{{ request()->routeIs('bdp.settings*') ? 'active' : '' }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 15l4-4 4 4 5-8"/></svg><span>Reports</span></a>
-                <a href="#" onclick="event.preventDefault()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span>Team</span></a>
-                <a href="{{ route('bdp.settings') }}" class="{{ request()->routeIs('bdp.settings*') ? 'active' : '' }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.04.04a2 2 0 1 1-2.83 2.83l-.04-.04a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.06a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.88.34l-.04.04a2 2 0 1 1-2.83-2.83l.04-.04A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.06a1.7 1.7 0 0 0 1.55-1 1.7 1.7 0 0 0-.34-1.88l-.04-.04a2 2 0 1 1 2.83-2.83l.04.04A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.06a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.88-.34l.04-.04a2 2 0 1 1 2.83 2.83l-.04.04a1.7 1.7 0 0 0-.34 1.88c.2.62.79 1.04 1.43 1.04H21a2 2 0 1 1 0 4h-.06a1.7 1.7 0 0 0-1.54 1Z"/></svg><span>Settings</span></a>
             </nav>
             <div class="bdp-sidebar-bottom">
                 <form method="POST" action="{{ route('bdp.logout') }}">
@@ -186,19 +196,19 @@ document.addEventListener('DOMContentLoaded', function () {
         </aside>
         <main class="bdp-main">
             <header class="bdp-topbar">
-                <button class="bdp-icon-btn bdp-mobile-menu" type="button" onclick="document.getElementById('bdpAppShell').classList.toggle('bdp-mobile-open')">
+                <button class="bdp-icon-btn bdp-mobile-menu" id="bdpMobileMenuBtn" type="button" aria-label="Open navigation" aria-controls="bdpSidebar" aria-expanded="false" onclick="bdpToggleMobileSidebar()">
                     <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
                 </button>
-                <div class="bdp-search">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-                    <input type="search" placeholder="Search products, SKUs, imports...">
-                    <span class="bdp-kbd">⌘ K</span>
-                </div>
+                <form class="bdp-search" role="search" method="GET" action="{{ route('bdp.products') }}">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                    <input type="search" name="q" value="{{ request()->routeIs('bdp.products') ? request('q', '') : '' }}" placeholder="Find a product or SKU" aria-label="Search products by name or SKU">
+                    <button class="bdp-search-submit" type="submit">Search</button>
+                </form>
                 <div class="bdp-top-actions">
-                    <button class="bdp-icon-btn" title="Notifications"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg><span class="bdp-bell-dot">5</span></button>
-                    <button class="bdp-icon-btn bdp-hide-mobile" title="Help"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 1 1 5.8 1c0 2-3 2-3 4"/><path d="M12 17h.01"/></svg></button>
+                    <a class="bdp-icon-btn" href="{{ route('bdp.sync.queue.index') }}" aria-label="Open sync queue" title="Sync Queue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" aria-hidden="true"><path d="M21 12a9 9 0 0 0-15.5-6.2L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 15.5 6.2L21 16"/><path d="M16 16h5v5"/></svg></a>
+                    <a class="bdp-icon-btn bdp-hide-mobile" href="{{ route('bdp.cj.settings') }}" aria-label="CJ API settings" title="CJ API Settings"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.04.04a2 2 0 1 1-2.83 2.83l-.04-.04a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.06a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.88.34l-.04.04a2 2 0 1 1-2.83-2.83l.04-.04A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 4 0h.06a1.7 1.7 0 0 0 1-1.55 1.7 1.7 0 0 0-.34-1.88l-.04-.04a2 2 0 1 1 2.83-2.83l.04.04A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.06a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.88-.34l.04-.04A1.7 1.7 0 0 0 19.4 9a1.7 1.7 0 0 0 1.54 1H21a2 2 0 1 1 0 4h-.06A1.7 1.7 0 0 0 19.4 15Z"/></svg></a>
                     <div class="bdp-user">
-                        <div class="bdp-avatar">JD</div>
+                        <div class="bdp-avatar" aria-hidden="true">{{ $bdpInitials }}</div>
                         <div><strong>{{ $bdpAdminProfileName ?? 'Admin' }}</strong><small>{{ $bdpAdminProfileEmail ?: 'Administrator' }}</small></div>
                     </div>
                 </div>
@@ -229,21 +239,22 @@ function bdpToggleSidebar(){
         localStorage.setItem('bdp_sidebar_collapsed', shell.classList.contains('bdp-collapsed') ? '1' : '0');
     } catch (e) {}
 }
-</script>
-
-
-<script>
-document.addEventListener('DOMContentLoaded', function () {
-    // Hide the global header search block without touching page-level product filters.
-    document.querySelectorAll('input[placeholder*="Search products"]').forEach(function (input) {
-        const inMain = input.closest('main, .bdp-main, .bdp-content, .bdp-products-shell, .bdp-edit-shell');
-        if (inMain) return;
-        const block = input.closest('form, .bdp-global-search, .bdp-header-search, .bdp-top-search, .bdp-search-box, .bdp-search-wrap, div');
-        if (block) block.style.display = 'none';
-        else input.style.display = 'none';
-    });
+function bdpToggleMobileSidebar(force){
+    var shell = document.getElementById('bdpAppShell');
+    var button = document.getElementById('bdpMobileMenuBtn');
+    if (!shell) return;
+    var shouldOpen = typeof force === 'boolean' ? force : !shell.classList.contains('bdp-mobile-open');
+    shell.classList.toggle('bdp-mobile-open',shouldOpen);
+    if (button){button.setAttribute('aria-expanded',shouldOpen ? 'true' : 'false');button.setAttribute('aria-label',shouldOpen ? 'Close navigation' : 'Open navigation');}
+}
+document.addEventListener('keydown',function(event){if(event.key==='Escape'){bdpToggleMobileSidebar(false);}});
+document.querySelectorAll('#bdpSidebar .bdp-nav a').forEach(function(link){
+    link.addEventListener('click',function(){if(window.innerWidth<=980)bdpToggleMobileSidebar(false);});
 });
+window.addEventListener('resize',function(){if(window.innerWidth>980)bdpToggleMobileSidebar(false);});
 </script>
+
+
 
 </body>
 </html>
