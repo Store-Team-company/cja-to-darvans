@@ -91,12 +91,23 @@ class BalencoDataPilotController extends Controller
         $mappedCategories = BdpCategoryMapping::whereNotNull('balenco_category_id')->count();
         $pendingCategories = BdpCategoryMapping::whereNull('balenco_category_id')->count();
 
+        // Show the actual configuration, not the previous hard-coded samples.
+        $country = strtoupper((string) \App\Models\BdpSetting::getValue('default_shipping_country', 'US'));
+        $marginType = (string) \App\Models\BdpSetting::getValue('default_margin_type', 'fixed');
+        $margin = (float) \App\Models\BdpSetting::getValue('default_margin_value', '20');
+        $minimum = (float) \App\Models\BdpSetting::getValue('minimum_selling_price', '39.99');
+        $rounding = (string) \App\Models\BdpSetting::getValue('retail_rounding', 'up_99');
+
         $pricingSummary = [
-            'Destination Country' => 'United States (US)',
-            'Margin Type' => 'Fixed amount',
-            'Margin Value' => '$20.00',
-            'Minimum Selling Price' => '$39.99',
-            'Retail Rounding' => 'Round up to .99',
+            'Destination Country' => $country ?: 'US',
+            'Margin Type' => $marginType === 'percentage' ? 'Percentage' : 'Fixed amount',
+            'Margin Value' => $marginType === 'percentage' ? number_format($margin, 2) . '%' : '$' . number_format($margin, 2),
+            'Minimum Selling Price' => '$' . number_format($minimum, 2),
+            'Retail Rounding' => match ($rounding) {
+                'nearest_99' => 'Nearest .99',
+                'none' => 'No rounding',
+                default => 'Round up to .99',
+            },
         ];
 
         return view('balenco-data-pilot.dashboard', compact(
@@ -1682,9 +1693,10 @@ if ($selectedIds->isNotEmpty()) {
         }
 
         $items = $query
-            ->orderByRaw("FIELD(q.status, 'processing', 'queued', 'failed', 'synced')")
+            // CASE works with MySQL (SiteGround) and SQLite (tests).
+            ->orderByRaw("CASE q.status WHEN 'processing' THEN 1 WHEN 'queued' THEN 2 WHEN 'failed' THEN 3 WHEN 'synced' THEN 4 ELSE 5 END")
             ->orderByDesc('q.updated_at')
-            ->paginate((int) $request->input('per_page', 25))
+            ->paginate(in_array((int) $request->input('per_page', 25), [10, 25, 50, 100], true) ? (int) $request->input('per_page', 25) : 25)
             ->withQueryString();
 
         return view('balenco-data-pilot.sync-queue', compact('items', 'counts', 'status', 'search'));
