@@ -40,6 +40,8 @@ class User extends Authenticatable implements \Illuminate\Contracts\Auth\MustVer
      */
     protected $casts = [
         'email_verified_at' => 'datetime',
+        'saas_manually_approved_at' => 'datetime',
+        'saas_password_change_required' => 'boolean',
         'password' => 'hashed',
     ];
 }
