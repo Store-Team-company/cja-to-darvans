@@ -20,9 +20,16 @@ jobs:
           find app config database routes tests integrations/botble-connector -type f -name '*.php' -print0 | xargs -0 -n1 php -l
       - name: Install Composer dependencies
         run: composer install --no-interaction --prefer-dist --no-progress
-      - name: Validate AUTH-04 PHP formatting
+      - name: Output Pint formatting patch for AUTH-04 review
         run: |
-          ./vendor/bin/pint --test \
+          ./vendor/bin/pint \
+            app/Services/Saas/SaasEmailOtpService.php \
+            app/Http/Controllers/Saas/SaasAuthController.php \
+            tests/Feature/SaasOtpMailDiagnosticsTest.php \
+            scripts/diagnose-siteground-auth04.php \
+            scripts/deploy-siteground-auth04.php \
+            scripts/verify-siteground-auth04.php
+          git diff --no-color --no-ext-diff --unified=3 -- \
             app/Services/Saas/SaasEmailOtpService.php \
             app/Http/Controllers/Saas/SaasAuthController.php \
             tests/Feature/SaasOtpMailDiagnosticsTest.php \
