@@ -67,7 +67,12 @@ foreach ($files as $path) {
 requireSettings05($rc === 0 && str_contains($output, 'Preflight PASS: 2 files checked; 2 files to update'),
     'baseline compatibility: '.$output);
 requireSettings05(!is_dir(dirname($target).'/datapilot-private-backups'), 'dry-run wrote backup');
-requireSettings05(!file_exists($target.'/app/Http/Controllers/BdpSettingsController.php'), 'dry-run wrote mailer');
+// Both patch targets exist in the approved previous release; a read-only
+// preflight must retain the old source exactly, not delete or replace it.
+[$oldCode, $oldContents] = gitSettings05Test($root, ['show', $base.':app/Http/Controllers/BdpSettingsController.php']);
+requireSettings05($oldCode === 0
+    && hash('sha256', (string) file_get_contents($target.'/app/Http/Controllers/BdpSettingsController.php'))
+        === hash('sha256', $oldContents), 'dry-run modified controller code');
 
 [$rc, $output] = runSettings05Test($root, ['--apply', '--target='.$target]);
 requireSettings05($rc !== 0 && str_contains($output, '--accept-disposable-installation'),
