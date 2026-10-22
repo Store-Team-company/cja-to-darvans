@@ -2,6 +2,8 @@
 
 use App\Http\Controllers\Saas\SaasAuthController;
 use App\Http\Controllers\Saas\SaasBillingController;
+use App\Http\Controllers\Saas\SaasConnectionController;
+use App\Http\Middleware\EnsureSaasEntitlement;
 use App\Http\Controllers\Saas\SaasPublicController;
 use App\Http\Controllers\Saas\SaasPortalController;
 use App\Http\Controllers\Saas\WorkspaceDashboardController;
@@ -47,6 +49,16 @@ Route::prefix('app')->middleware([EnsureSaasEnabled::class])->name('saas.')->gro
                     Route::get('/', [WorkspaceDashboardController::class, 'show'])->name('dashboard');
                     Route::get('/products', [SaasPortalController::class, 'products'])->name('products');
                     Route::get('/connections', [SaasPortalController::class, 'connections'])->name('connections');
+                    Route::post('/connections/cj', [SaasConnectionController::class, 'saveCj'])
+                        ->middleware([EnsureSaasEntitlement::class.':connect_cj', 'throttle:6,1'])
+                        ->name('connections.cj.save');
+                    Route::delete('/connections/cj', [SaasConnectionController::class, 'removeCj'])
+                        ->middleware('throttle:6,1')->name('connections.cj.remove');
+                    Route::post('/connections/botble', [SaasConnectionController::class, 'addStore'])
+                        ->middleware([EnsureSaasEntitlement::class.':connect_store', 'throttle:6,1'])
+                        ->name('connections.botble.add');
+                    Route::delete('/connections/botble/{store}', [SaasConnectionController::class, 'removeStore'])
+                        ->middleware('throttle:6,1')->name('connections.botble.remove');
                     Route::get('/team', [SaasPortalController::class, 'team'])->name('team');
                     Route::get('/settings', [SaasPortalController::class, 'settings'])->name('settings');
                     Route::patch('/settings', [SaasPortalController::class, 'updateSettings'])
