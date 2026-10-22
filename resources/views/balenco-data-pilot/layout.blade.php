@@ -148,6 +148,7 @@
         ],
         'Administration' => [
             ['label' => 'API Logs', 'route' => 'bdp.api.logs', 'match' => 'bdp.api.logs*', 'icon' => 'file'],
+            ['label' => 'Customer Accounts', 'route' => 'bdp.saas.customers', 'match' => 'bdp.saas.customers*', 'icon' => 'user'],
             ['label' => 'Admin Profile', 'route' => 'bdp.profile', 'match' => 'bdp.profile*', 'icon' => 'user'],
         ],
     ];
