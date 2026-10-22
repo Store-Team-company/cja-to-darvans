@@ -2,6 +2,10 @@
 
 use App\Http\Controllers\BalencoDataPilotController;
 use App\Http\Controllers\BalencoCjaWooApiController;
+use App\Http\Controllers\BdpCategoryMappingController;
+use App\Http\Controllers\BdpProfileController;
+use App\Http\Controllers\BdpSettingsController;
+use App\Http\Controllers\BdpAiPromptSettingsController;
 use App\Http\Middleware\BalencoDataPilotAuth;
 use Illuminate\Support\Facades\Route;
 
@@ -77,6 +81,40 @@ Route::middleware([BalencoDataPilotAuth::class])->name('bdp.')->group(function (
     Route::post('/bulk-update', [BalencoDataPilotController::class, 'bulkUpdate'])->name('bulk.update');
     Route::post('/bulk-pricing', [BalencoDataPilotController::class, 'bulkPricing'])->name('bulk.pricing');
     Route::post('/push-to-shofy', [BalencoDataPilotController::class, 'pushToShofy'])->name('push');
+
+    // Existing views and controller methods rely on these named routes.
+    // Keep all mutating operations POST-only and behind dashboard authentication.
+    Route::get('/profile', [BdpProfileController::class, 'index'])->name('profile');
+    Route::post('/profile', [BdpProfileController::class, 'update'])->name('profile.update');
+
+    Route::get('/settings', [BdpSettingsController::class, 'index'])->name('settings');
+    Route::post('/settings', [BdpSettingsController::class, 'update'])->name('settings.update');
+    Route::post('/settings/ai-prompts', [BdpAiPromptSettingsController::class, 'update'])->name('settings.ai.prompts.update');
+    Route::post('/settings/fetch-categories', [BdpSettingsController::class, 'fetchBalencoCategories'])->name('settings.categories.fetch');
+    Route::post('/settings/test-connected-store', [BdpSettingsController::class, 'testConnectedStore'])->name('settings.store.test.connected');
+    Route::post('/settings/test-store-connection', [BdpSettingsController::class, 'testStoreConnection'])->name('settings.store.test');
+    Route::post('/settings/test-connection', [BdpSettingsController::class, 'testConnection'])->name('settings.connection.test');
+    Route::post('/settings/connected-store', [BdpSettingsController::class, 'saveConnectedStore'])->name('settings.store.save');
+
+    Route::post('/category-mapping/store', [BdpCategoryMappingController::class, 'store'])->name('categories.mapping.store');
+    Route::post('/category-mapping/auto', [BdpCategoryMappingController::class, 'autoMap'])->name('categories.mapping.auto');
+    Route::post('/category-mapping/fetch', [BdpCategoryMappingController::class, 'fetchBalencoCategories'])->name('categories.mapping.fetch');
+
+    Route::post('/cj-import/bulk', [BalencoDataPilotController::class, 'importMultipleFromCj'])->name('cj.import.bulk');
+    Route::post('/products/{product}/reviews/fetch-cj', [BalencoDataPilotController::class, 'fetchCjReviews'])->name('products.reviews.fetch.cj');
+
+    Route::post('/bulk-optimization/export', [BalencoDataPilotController::class, 'exportBulkOptimizationCsv'])->name('bulk.optimization.export');
+    Route::post('/bulk-optimization/import', [BalencoDataPilotController::class, 'importBulkOptimizationCsv'])->name('bulk.optimization.import');
+
+    Route::post('/products/archive', [BalencoDataPilotController::class, 'archiveProducts'])->name('products.archive');
+    Route::post('/products/restore', [BalencoDataPilotController::class, 'restoreProducts'])->name('products.restore');
+    Route::post('/products/labels/assign', [BalencoDataPilotController::class, 'assignProductLabel'])->name('products.labels.assign');
+    Route::post('/products/labels/remove', [BalencoDataPilotController::class, 'removeProductLabel'])->name('products.labels.remove');
+    Route::get('/products/{product}/images.zip', [BalencoDataPilotController::class, 'downloadProductImagesZip'])->name('products.images.zip');
+
+    Route::get('/sync-queue', [BalencoDataPilotController::class, 'syncQueue'])->name('sync.queue.index');
+    Route::post('/sync-queue/enqueue', [BalencoDataPilotController::class, 'enqueueSyncQueue'])->name('sync.queue.enqueue');
+
 });
 
 // Old URL support. If you open /balenco-data-pilot, it redirects to root.

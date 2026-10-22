@@ -52,7 +52,7 @@ class BdpCjApiService
             'access_token_expires_at' => $this->dateOrNull($data['accessTokenExpiryDate'] ?? null),
             'refresh_token' => $data['refreshToken'] ?? null,
             'refresh_token_expires_at' => $this->dateOrNull($data['refreshTokenExpiryDate'] ?? null),
-            'last_response' => json_encode($json),
+            'last_response' => json_encode(['result' => (bool) ($json['result'] ?? $json['success'] ?? false), 'message' => $json['message'] ?? null]),
             'last_tested_at' => now(),
         ]);
 
@@ -93,7 +93,7 @@ class BdpCjApiService
     protected function ensureAccessToken(): string
     {
         $token = $this->token();
-        if (! $token->access_token || ($token->access_token_expires_at && $token->access_token_expires_at->subDay()->isPast())) {
+        if (! $token->access_token || ($token->access_token_expires_at && $token->access_token_expires_at->copy()->subMinutes(5)->isPast())) {
             if ($token->refresh_token && (! $token->refresh_token_expires_at || $token->refresh_token_expires_at->isFuture())) {
                 $this->refreshAccessToken();
             } else {
@@ -345,7 +345,7 @@ class BdpCjApiService
                 'price' => $variantPrice,
                 'sale_price' => null,
                 'cost_per_item' => $variantPrice,
-                'quantity' => $qty ?: (int) env('BDP_DEFAULT_VARIATION_QUANTITY', 100),
+                'quantity' => $qty !== null ? max(0, (int) $qty) : (int) config('balenco-data-pilot.default_variation_quantity', 100),
                 'cj_inventory_total' => $inventoryInfo['total'] ?? null,
                 'cj_inventory_details' => !empty($inventoryInfo['details']) ? json_encode($inventoryInfo['details']) : null,
                 'stock_status' => ($qty ?? 0) > 0 ? 'in_stock' : 'out_of_stock',
@@ -969,12 +969,26 @@ class BdpCjApiService
                 'status_code' => $status,
                 'authorized' => $success,
                 'message' => $success ? 'CJ API call successful.' : 'CJ API call failed.',
-                'request_body' => $request,
-                'response_body' => $response,
+                'request_body' => $this->redactSensitiveData($request),
+                'response_body' => $this->redactSensitiveData($response),
             ]);
         } catch (\Throwable $e) {
             // Never break importing because logging failed.
         }
+    }
+
+    protected function redactSensitiveData(array $data): array
+    {
+        $sensitive = ['apikey', 'accesstoken', 'refreshtoken', 'consumerkey', 'consumersecret', 'password', 'secret', 'token', 'authorization'];
+        foreach ($data as $key => $value) {
+            $normalized = strtolower(preg_replace('/[^a-zA-Z]/', '', (string) $key));
+            if (in_array($normalized, $sensitive, true)) {
+                $data[$key] = '[REDACTED]';
+            } elseif (is_array($value)) {
+                $data[$key] = $this->redactSensitiveData($value);
+            }
+        }
+        return $data;
     }
 
     protected function dateOrNull(?string $value)
