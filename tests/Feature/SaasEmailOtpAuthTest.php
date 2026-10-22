@@ -119,6 +119,38 @@ class SaasEmailOtpAuthTest extends TestCase
         ]);
     }
 
+    public function test_admin_can_activate_without_verifying_email_or_replacing_existing_password(): void
+    {
+        [$user, $workspace] = $this->customer();
+        $this->platformAdmin();
+
+        $this->post(route('bdp.saas.customers.approve', $user), [])->assertRedirect();
+        $this->assertNotNull($user->fresh()->saas_manually_approved_at);
+        $this->assertNull($user->fresh()->email_verified_at);
+        $this->assertFalse($user->fresh()->saas_password_change_required);
+
+        $this->post(route('saas.login.submit'), [
+            'email' => $user->email,
+            'password' => 'ExistingCustomerPassword123',
+        ])->assertRedirect(route('saas.home'));
+        $this->assertAuthenticatedAs($user);
+        $this->get(route('saas.workspace.dashboard', $workspace->public_id))->assertOk();
+    }
+
+    public function test_platform_admin_cannot_activate_an_unscoped_legacy_account(): void
+    {
+        $legacy = User::factory()->create(['email_verified_at' => null]);
+        $this->platformAdmin();
+
+        $this->post(route('bdp.saas.customers.approve', $legacy), [
+            'password' => 'StrongTemporaryPassword123',
+            'password_confirmation' => 'StrongTemporaryPassword123',
+        ])->assertStatus(422);
+
+        $this->assertNull($legacy->fresh()->saas_manually_approved_at);
+        $this->assertDatabaseCount('saas_customer_admin_events', 0);
+    }
+
     public function test_approved_user_must_change_admin_set_temporary_password(): void
     {
         [$user, $workspace] = $this->customer();
