@@ -79,20 +79,17 @@ class BdpCategoryMappingController extends Controller
         return back()->with('success', "Auto-map complete. {$created} mappings created.");
     }
 
-    public function fetchBalencoCategories(Request $request)
+    public function fetchBalencoCategories(Request $request, \App\Services\BdpShofyCategoryService $categoryService)
     {
-        $connection = $request->input('connection') ?: $this->setting('balenco_db_connection') ?: $this->setting('shofy_db_connection') ?: config('database.default');
-
         try {
-            $rows = DB::connection($connection)
-                ->table('ec_product_categories')
-                ->select(['id', 'name', 'parent_id', 'status'])
-                ->orderBy('parent_id')
-                ->orderBy('name')
-                ->get();
+            // Reuse the same controlled Botble connection as other legacy
+            // store operations. Never use a requester-selected DB connection
+            // or fall back to the Data Pilot application's own database.
+            $rows = collect($categoryService->balencoCategories())
+                ->map(fn (array $item) => (object) $item);
 
             if ($rows->isEmpty()) {
-                return back()->with('error', 'No categories found in ec_product_categories.');
+                return back()->with('error', 'The connected Botble store has no categories to import.');
             }
 
             $byId = $rows->keyBy('id');
@@ -114,16 +111,23 @@ class BdpCategoryMappingController extends Controller
                     [
                         'name' => $row->name,
                         'path' => collect($parts)->filter()->implode(' > '),
-                        'parent_id' => $row->parent_id,
+                        'parent_id' => $row->parent_id ?? null,
                         'status' => $row->status ?? null,
                         'raw_json' => json_encode($row),
                     ]
                 );
             }
 
-            return back()->with('success', 'Fetched '.$rows->count().' Balenco categories.');
+            return back()->with('success', 'Imported '.$rows->count().' categories from your Botble store.');
         } catch (\Throwable $e) {
-            return back()->with('error', 'Could not fetch Balenco categories: '.$e->getMessage());
+            // Do not display raw SQLSTATE exceptions, remote DB usernames or
+            // hostnames; they are private installation configuration details.
+            return back()->with(
+                'error',
+                $e instanceof \RuntimeException
+                    ? $e->getMessage()
+                    : 'Could not fetch Botble categories. Verify the private connected-store configuration.'
+            );
         }
     }
 
