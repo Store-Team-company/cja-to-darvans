@@ -29,7 +29,7 @@ class CatalogImportService
             if ($pair->status !== 'paired' || !$pair->shared_secret) {
                 throw new RuntimeException('Connection revoked; reconnect before approval.');
             }
-            if (!in_array($draft->status, ['pending_review', 'imported_draft'], true)) {
+            if (!in_array($draft->status, ['pending_review', 'failed', 'imported_draft'], true)) {
                 throw new RuntimeException('This inbox item cannot be approved.');
             }
 
