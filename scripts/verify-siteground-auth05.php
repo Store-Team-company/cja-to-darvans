@@ -69,6 +69,26 @@ auth05Assert(str_contains($result, 'replace routes/saas.php')
 auth05Assert(! is_dir(dirname($target).'/datapilot-private-backups'),
     'Dry run created backup');
 
+// Real SiteGround reported a customized legacy route file. Ensure the
+// updater preserves unrelated local code and patches only exact admin links.
+$routeFile = $target.'/routes/balenco-data-pilot.php';
+$layoutFile = $target.'/resources/views/balenco-data-pilot/layout.blade.php';
+auth05Put($routeFile, (string) file_get_contents($routeFile)
+    ."\n// EXAMPLE SITEGROUND-ONLY ROUTE CUSTOMIZATION; MUST SURVIVE\n");
+auth05Put($layoutFile, (string) file_get_contents($layoutFile)
+    ."\n{{-- EXAMPLE SITEGROUND-ONLY LAYOUT CUSTOMIZATION; MUST SURVIVE --}}\n");
+$routeHash = hash_file('sha256', $routeFile);
+$layoutHash = hash_file('sha256', $layoutFile);
+[$status, $result] = auth05Exec([PHP_BINARY, $deployer,
+    '--check', '--target='.$target], $root);
+auth05Assert($status === 0
+    && str_contains($result, 'merge routes/balenco-data-pilot.php')
+    && str_contains($result, 'merge resources/views/balenco-data-pilot/layout.blade.php'),
+    'SiteGround-customized legacy file safe-merge dry run failed: '.$result);
+auth05Assert($routeHash === hash_file('sha256', $routeFile)
+    && $layoutHash === hash_file('sha256', $layoutFile),
+    'Customized files changed during --check');
+
 [$status, $result] = auth05Exec(
     [PHP_BINARY, $deployer, '--apply', '--backup-confirmed', '--target='.$target],
     $root
@@ -84,5 +104,22 @@ auth05Put($target.'/routes/saas.php',
 );
 auth05Assert($status !== 0 && str_contains($result, 'Live file customized'),
     'Unknown live edit was not protected');
+
+// Restore unmodified SaaS routes; remove the verified insertion anchor from
+// the customized legacy route. The updater must ABORT instead of guessing.
+[$status, $originalSaas] = auth05Exec(['git', 'show', $base.':routes/saas.php'], $root);
+auth05Assert($status === 0, 'Could not restore SaaS route fixture');
+auth05Put($target.'/routes/saas.php', $originalSaas);
+$legacy = (string) file_get_contents($routeFile);
+auth05Assert(str_contains($legacy, "    Route::get('/profile', [BdpProfileController::class, 'index'])->name('profile');"),
+    'Missing test route anchor');
+auth05Put($routeFile, str_replace(
+    "    Route::get('/profile', [BdpProfileController::class, 'index'])->name('profile');",
+    "    // profile has been independently refactored",
+    $legacy
+));
+[$status, $result] = auth05Exec([PHP_BINARY, $deployer, '--check', '--target='.$target], $root);
+auth05Assert($status !== 0 && str_contains($result, 'Missing/ambiguous legacy admin route'),
+    'Ambiguous customized admin route must abort');
 
 echo "PASS: AUTH-05 deployment restricts source and expected head, protects customizations and performs read-only checks.\n";
