@@ -34,6 +34,15 @@ class DatapilotConnectorServiceProvider extends ServiceProvider
                 'url' => route('datapilot.connector.settings'),
                 'permissions' => ['datapilot-connector.settings'],
             ]);
+            DashboardMenu::make()->registerItem([
+                'id' => 'cms-plugins-datapilot-incoming',
+                'priority' => 91,
+                'parent_id' => null,
+                'name' => 'Data Pilot Incoming Products',
+                'icon' => 'ti ti-package-import',
+                'url' => route('datapilot.connector.incoming'),
+                'permissions' => ['datapilot-connector.settings'],
+            ]);
         });
     }
 }
