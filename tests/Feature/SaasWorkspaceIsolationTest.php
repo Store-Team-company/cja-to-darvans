@@ -10,6 +10,8 @@ use App\Services\Saas\WorkspacePermissions;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\Mail;
+use App\Mail\SaasEmailOtpMail;
 use Illuminate\Auth\Notifications\VerifyEmail;
 use Tests\TestCase;
 
@@ -62,7 +64,7 @@ class SaasWorkspaceIsolationTest extends TestCase
     public function test_signup_creates_a_private_workspace_and_requires_email_verification(): void
     {
         config()->set('saas.registration_enabled', true);
-        Notification::fake();
+        Mail::fake();
 
         $this->post('/app/register', [
             'name' => 'First Merchant',
@@ -70,19 +72,19 @@ class SaasWorkspaceIsolationTest extends TestCase
             'email' => 'merchant@example.test',
             'password' => 'SafePasswordExample123',
             'password_confirmation' => 'SafePasswordExample123',
-        ])->assertRedirect(route('verification.notice'));
+        ])->assertRedirect(route('saas.otp.verify.form'));
 
         $user = User::where('email', 'merchant@example.test')->firstOrFail();
-        $this->assertAuthenticatedAs($user);
+        $this->assertGuest();
         $this->assertNull($user->email_verified_at);
         $this->assertDatabaseHas('saas_workspace_memberships', [
             'user_id' => $user->id, 'role' => 'owner', 'status' => 'active',
         ]);
-        Notification::assertSentTo($user, VerifyEmail::class);
+        Mail::assertSent(SaasEmailOtpMail::class, 1);
 
         $workspace = SaasWorkspace::firstOrFail();
         $this->get(route('saas.workspace.dashboard', ['workspace' => $workspace->public_id]))
-            ->assertRedirect(route('verification.notice'));
+            ->assertRedirect(route('saas.login'));
     }
 
     public function test_nonmembers_cannot_read_another_merchants_workspace(): void
