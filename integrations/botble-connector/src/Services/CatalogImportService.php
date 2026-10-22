@@ -91,8 +91,10 @@ class CatalogImportService
                 $product->is_variation = false;
             }
             $product->name = $payload['title'];
-            $product->description = $payload['description'] ?? '';
-            $product->content = $payload['description'] ?? '';
+            // Treat CJ HTML as plain text until a reviewed sanitizer is available.
+            $description = strip_tags((string) ($payload['description'] ?? ''));
+            $product->description = $description;
+            $product->content = e($description);
             $product->sku = $sku;
             $product->price = $price;
             $product->with_storehouse_management = array_key_exists('quantity', $payload) && $variants === [];
@@ -100,6 +102,20 @@ class CatalogImportService
                 $product->quantity = (int) $payload['quantity'];
             }
             $product->save();
+
+            // Categories are native Botble IDs selected/mapped by the store.
+            // Reject unknown IDs instead of silently dropping associations.
+            if (!empty($payload['category_ids'])) {
+                $categoryClass = \\Botble\\Ecommerce\\Models\\ProductCategory::class;
+                if (!class_exists($categoryClass) || !method_exists($product, 'categories')) {
+                    throw new RuntimeException('Category mapping not supported by this Botble version.');
+                }
+                $ids = array_values(array_unique(array_map('intval', $payload['category_ids'])));
+                if ($categoryClass::query()->whereIn('id', $ids)->count() !== count($ids)) {
+                    throw new RuntimeException('One or more mapped native category IDs are invalid.');
+                }
+                $product->categories()->syncWithoutDetaching($ids);
+            }
 
             if (!$mapping) {
                 $mapping = ProductMapping::query()->create([
@@ -207,6 +223,10 @@ class CatalogImportService
             // If the installed Botble version returns a reserved variation ID
             // without a native Product, fail rather than creating a mismatched row.
             throw new RuntimeException('Botble variation API returned a missing native child product.');
+        }
+        if (!$mapped) {
+            // Native helper may create a child with a different default status.
+            $child->status = 'draft';
         }
         $child->name = $parent->name;
         $child->sku = $sku;
