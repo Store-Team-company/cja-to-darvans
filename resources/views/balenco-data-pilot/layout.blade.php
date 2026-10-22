@@ -147,6 +147,7 @@
             ['label' => 'Store & Pricing', 'route' => 'bdp.settings', 'match' => 'bdp.settings*', 'icon' => 'settings'],
         ],
         'Administration' => [
+            ['label' => 'Manage Customers', 'route' => 'bdp.customers.index', 'match' => 'bdp.customers.*', 'icon' => 'user'],
             ['label' => 'API Logs', 'route' => 'bdp.api.logs', 'match' => 'bdp.api.logs*', 'icon' => 'file'],
             ['label' => 'Admin Profile', 'route' => 'bdp.profile', 'match' => 'bdp.profile*', 'icon' => 'user'],
         ],
