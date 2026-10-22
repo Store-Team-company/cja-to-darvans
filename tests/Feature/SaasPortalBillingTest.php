@@ -322,6 +322,9 @@ class SaasPortalBillingTest extends TestCase
 
     public function test_store_registration_rejects_internal_urls_and_enforces_plan_limits(): void
     {
+        // This test exercises multiple invalid URLs in one minute; keep the
+        // real throttle for production routes but disable it for this matrix.
+        $this->withoutMiddleware(\Illuminate\Routing\Middleware\ThrottleRequests::class);
         [$owner, $workspace] = $this->workspace();
         $workspace->billing()->create([
             'stripe_customer_id' => 'cus_store_test',
