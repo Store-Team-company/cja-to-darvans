@@ -37,12 +37,19 @@ class IncomingProductsController extends Controller
 
         try {
             $result = $importer->approve($draft);
+            $draft->increment('import_attempts');
+            $draft->forceFill([
+                'last_import_error' => null,
+                'last_import_attempt_at' => now(),
+                'imported_at' => now(),
+            ])->save();
             return back()->with('status', sprintf(
                 'Saved native Botble draft product #%d with %d variations.',
                 $result['product_id'],
                 $result['variation_count']
             ));
         } catch (RuntimeException $e) {
+            $this->recordFailedAttempt($draft, $e->getMessage());
             return back()->withErrors(['catalog' => $e->getMessage()]);
         } catch (Throwable $e) {
             Log::error('Data Pilot native catalog import failed', [
@@ -50,7 +57,18 @@ class IncomingProductsController extends Controller
                 'exception_type' => get_class($e),
             ]);
 
+            $this->recordFailedAttempt($draft, 'Native import failed; verify private logs and Botble compatibility.');
             return back()->withErrors(['catalog' => 'Native import failed without committing the catalog changes. Inspect the private server logs and verify the installed Botble version.']);
         }
+    }
+
+    private function recordFailedAttempt(IncomingDraft $draft, string $message): void
+    {
+        $draft->increment('import_attempts');
+        $draft->forceFill([
+            'status' => 'failed',
+            'last_import_error' => mb_substr($message, 0, 500),
+            'last_import_attempt_at' => now(),
+        ])->save();
     }
 }
