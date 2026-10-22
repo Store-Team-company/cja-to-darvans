@@ -52,6 +52,28 @@ class SaasBotbleFirstPartyPilotTest extends TestCase
         );
     }
 
+    public function test_internal_owner_sees_pilot_registration_and_pairing_controls(): void
+    {
+        [$owner, $workspace] = $this->setupPilot();
+        $url = route('saas.workspace.connections', ['workspace' => $workspace->public_id]);
+
+        $this->actingAs($owner)->get($url)
+            ->assertOk()
+            ->assertSee('Register store for pairing')
+            ->assertSee('https://sandbox.daystart.pk');
+
+        $this->addStore($owner, $workspace)->assertRedirect();
+        $store = $workspace->stores()->firstOrFail();
+        $this->actingAs($owner)->get($url)
+            ->assertOk()
+            ->assertDontSee('Generate one-time pairing code');
+
+        config()->set('saas.botble_pilot.store_id', $store->public_id);
+        $this->actingAs($owner)->get($url)
+            ->assertOk()
+            ->assertSee('Generate one-time pairing code');
+    }
+
     public function test_pilot_disabled_by_default_does_not_allow_unpaid_store(): void
     {
         [$owner, $workspace] = $this->setupPilot();
