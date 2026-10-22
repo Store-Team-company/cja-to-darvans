@@ -57,6 +57,7 @@ class SaasAuthController extends Controller
         // Do not sign in or mark the new account verified until OTP succeeds.
         // Registered event sends a synchronous verification email and can
         // throw HTTP 500 when the SMTP transport is down on shared hosting.
+        $request->session()->forget('saas_otp_public_id');
         $request->session()->put('saas_otp_email', $user->email);
         $sent = $otp->send($user, $request, 'register');
 
@@ -78,8 +79,12 @@ class SaasAuthController extends Controller
     {
         $data = $request->validate(['email' => ['required', 'email:rfc', 'max:255']]);
         $email = mb_strtolower(trim($data['email']));
+        // Keep a still-valid challenge when the same user resends within
+        // cooldown; only discard the old session on an email switch.
+        if ($request->session()->get('saas_otp_email') !== $email) {
+            $request->session()->forget('saas_otp_public_id');
+        }
         $request->session()->put('saas_otp_email', $email);
-        $request->session()->forget('saas_otp_public_id');
 
         $user = User::where('email', $email)->first();
         if ($user && DB::table('saas_workspace_memberships')
