@@ -16,7 +16,7 @@ class SettingsController extends Controller
     public function index(): View
     {
         return view('plugins/datapilot-connector::settings', [
-            'pairing' => ConnectorPairing::query()->first(),
+            'pairing' => ConnectorPairing::query()->latest('id')->first(),
             'inboxCount' => \Illuminate\Support\Facades\DB::table('datapilot_connector_drafts')->count(),
             'saasUrl' => (string) config('datapilot-connector.saas_url', ''),
         ]);
@@ -73,11 +73,12 @@ class SettingsController extends Controller
 
     public function revoke(): RedirectResponse
     {
-        $pairing = ConnectorPairing::query()->first();
+        $pairing = ConnectorPairing::query()->where('status', 'paired')->latest('id')->first();
         if ($pairing) {
             $pairing->status = 'revoked';
-            // Remove secrets rather than retain decryption capability.
-            $pairing->delete();
+            // Keep historical draft inbox entries but purge the signing key.
+            $pairing->shared_secret = null;
+            $pairing->save();
         }
 
         return back()->with('status', 'Local connector pairing revoked. Revoke the matching store in Data Pilot as well.');

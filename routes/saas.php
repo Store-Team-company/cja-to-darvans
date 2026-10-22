@@ -3,6 +3,7 @@
 use App\Http\Controllers\Saas\SaasAuthController;
 use App\Http\Controllers\Saas\SaasBillingController;
 use App\Http\Controllers\Saas\SaasConnectionController;
+use App\Http\Controllers\Saas\SaasBotblePairingController;
 use App\Http\Middleware\EnsureSaasEntitlement;
 use App\Http\Controllers\Saas\SaasPublicController;
 use App\Http\Controllers\Saas\SaasPortalController;
@@ -64,6 +65,10 @@ Route::prefix('app')->middleware([EnsureSaasEnabled::class])->name('saas.')->gro
                         ->name('connections.botble.add');
                     Route::delete('/connections/botble/{store}', [SaasConnectionController::class, 'removeStore'])
                         ->middleware('throttle:6,1')->name('connections.botble.remove');
+                    Route::post('/connections/botble/{store}/pair-code', [SaasBotblePairingController::class, 'issue'])
+                        ->middleware('throttle:3,1')->name('connections.botble.pair-code');
+                    Route::post('/connections/botble/{store}/revoke', [SaasBotblePairingController::class, 'revoke'])
+                        ->middleware('throttle:3,1')->name('connections.botble.revoke');
                     Route::get('/team', [SaasPortalController::class, 'team'])->name('team');
                     Route::get('/settings', [SaasPortalController::class, 'settings'])->name('settings');
                     Route::patch('/settings', [SaasPortalController::class, 'updateSettings'])
