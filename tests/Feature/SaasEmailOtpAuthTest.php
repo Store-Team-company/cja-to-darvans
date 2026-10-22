@@ -2,8 +2,7 @@
 
 namespace Tests\Feature;
 
-use App\Mail\SaasEmailOtpMail;
-use App\Models\SaasEmailOtpChallenge;
+use App\Models\BdpAdminProfile;
 use App\Models\SaasWorkspace;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -20,188 +19,170 @@ class SaasEmailOtpAuthTest extends TestCase
         parent::setUp();
         config()->set('saas.enabled', true);
         config()->set('saas.registration_enabled', true);
-        // The application rejects non-delivering array/log mailers; fake the
-        // outbound transport while keeping production-like SMTP configuration.
-        config()->set('mail.default', 'smtp');
-        config()->set('mail.mailers.smtp.host', 'smtp.example.org');
-        config()->set('mail.mailers.smtp.port', 587);
-        config()->set('mail.from.address', 'no-reply@test-mailer.invalid');
         Mail::fake();
     }
 
-    private function registeredUser(string $email = 'example@merchant.test', bool $verified = false): User
+    private function customer(bool $verified = false): array
     {
         $user = User::factory()->create([
-            'email' => $email,
             'email_verified_at' => $verified ? now() : null,
+            'password' => Hash::make('ExistingCustomerPassword123'),
         ]);
-        $workspace = SaasWorkspace::create(['name' => 'Example merchant']);
+        $workspace = SaasWorkspace::create(['name' => 'Customer workspace']);
         $workspace->members()->attach($user->id, ['role' => 'owner', 'status' => 'active']);
 
-        return $user;
+        return [$user, $workspace];
     }
 
-    private function latestCode(): string
+    private function platformAdmin(): void
     {
-        $value = '';
-        Mail::assertSent(SaasEmailOtpMail::class, function (SaasEmailOtpMail $mail) use (&$value): bool {
-            $value = $mail->code;
-            return true;
-        });
-        $this->assertMatchesRegularExpression('/^[0-9]{6}$/D', $value);
-
-        return $value;
-    }
-
-    public function test_signup_without_password_requires_valid_one_time_code_before_auth(): void
-    {
-        $this->post(route('saas.register.submit'), [
-            'name' => 'New Customer',
-            'workspace_name' => 'OTP-Only Shop',
-            'email' => 'NEW@EXAMPLE.TEST',
-        ])->assertRedirect(route('saas.otp.verify.form'));
-
-        $this->assertGuest();
-        $user = User::where('email', 'new@example.test')->firstOrFail();
-        $workspace = SaasWorkspace::firstOrFail();
-        $this->assertNull($user->email_verified_at);
-        $this->assertTrue(Hash::check('nothing', $user->password) === false);
-        $this->assertDatabaseHas('saas_workspace_memberships', [
-            'workspace_id' => $workspace->id, 'user_id' => $user->id, 'role' => 'owner',
+        BdpAdminProfile::create([
+            'name' => 'Data Pilot Admin',
+            'username' => 'admin_for_testing',
+            'password' => Hash::make('A-Secure-Admin-Password123'),
         ]);
-
-        $code = $this->latestCode();
-        $challenge = SaasEmailOtpChallenge::firstOrFail();
-        $this->assertNotSame($code, $challenge->code_hash);
-        $this->assertTrue(Hash::check($code, $challenge->code_hash));
-        $this->get(route('saas.workspace.dashboard', $workspace->public_id))
-            ->assertRedirect(route('saas.login'));
-
-        $this->post(route('saas.otp.verify'), ['code' => $code])
-            // Honor the original intended workspace URL after authentication.
-            ->assertRedirect(route('saas.workspace.dashboard', $workspace->public_id));
-        $this->assertAuthenticatedAs($user);
-        $this->assertNotNull($user->fresh()->email_verified_at);
-        $this->assertNotNull($challenge->fresh()->consumed_at);
+        $this->post(route('bdp.login'), [
+            'username' => 'admin_for_testing',
+            'password' => 'A-Secure-Admin-Password123',
+        ])->assertRedirect(route('bdp.index'));
     }
 
-    public function test_existing_customer_can_request_otp_without_using_password(): void
+    public function test_signup_requires_password_and_never_sends_otp_or_logs_in(): void
     {
-        $user = $this->registeredUser(verified: true);
-        $this->get(route('saas.login'))->assertOk()
-            ->assertSee('Continue with email OTP')
-            ->assertSee('Sign in using a password');
-
-        $this->post(route('saas.otp.send'), ['email' => strtoupper($user->email)])
-            ->assertRedirect(route('saas.otp.verify.form'));
-
-        $code = $this->latestCode();
-        $this->post(route('saas.otp.verify'), ['code' => $code])
-            ->assertRedirect(route('saas.home'));
-        $this->assertAuthenticatedAs($user);
-    }
-
-    public function test_code_can_only_be_used_once_after_logout(): void
-    {
-        $user = $this->registeredUser();
-        $this->post(route('saas.otp.send'), ['email' => $user->email]);
-        $code = $this->latestCode();
-        $this->post(route('saas.otp.verify'), ['code' => $code])
-            ->assertRedirect(route('saas.home'));
-        $this->post(route('saas.logout'))->assertRedirect(route('saas.login'));
-
-        $this->post(route('saas.otp.verify'), ['code' => $code])
-            ->assertSessionHasErrors('code');
-        $this->assertGuest();
-    }
-
-    public function test_code_expires_and_locks_after_five_wrong_attempts(): void
-    {
-        $user = $this->registeredUser();
-        $this->post(route('saas.otp.send'), ['email' => $user->email]);
-        $challenge = SaasEmailOtpChallenge::firstOrFail();
-        $good = $this->latestCode();
-        $bad = $good === '000000' ? '999999' : '000000';
-
-        $this->withoutMiddleware(\Illuminate\Routing\Middleware\ThrottleRequests::class);
-        for ($n = 0; $n < 5; $n++) {
-            $this->post(route('saas.otp.verify'), ['code' => $bad])
-                ->assertSessionHasErrors('code');
-        }
-        $this->assertSame(5, $challenge->fresh()->attempts);
-        $this->assertNotNull($challenge->fresh()->consumed_at);
-        $this->post(route('saas.otp.verify'), ['code' => $good])
-            ->assertSessionHasErrors('code');
-        $this->assertGuest();
-    }
-
-    public function test_expired_code_cannot_authenticate_customer(): void
-    {
-        $user = $this->registeredUser();
-        $this->post(route('saas.otp.send'), ['email' => $user->email]);
-        $good = $this->latestCode();
-        SaasEmailOtpChallenge::query()->update(['expires_at' => now()->subMinute()]);
-
-        $this->post(route('saas.otp.verify'), ['code' => $good])
-            ->assertSessionHasErrors('code');
-        $this->assertGuest();
-    }
-
-    public function test_resend_has_account_level_cooldown_and_invalidates_old_code(): void
-    {
-        $user = $this->registeredUser();
-        $this->post(route('saas.otp.send'), ['email' => $user->email]);
-        $old = SaasEmailOtpChallenge::firstOrFail();
-
-        $this->post(route('saas.otp.send'), ['email' => $user->email])
-            ->assertRedirect(route('saas.otp.verify.form'));
-        $this->assertDatabaseCount('saas_email_otp_challenges', 1);
-
-        $old->update(['sent_at' => now()->subMinutes(2)]);
-        $this->withoutMiddleware(\Illuminate\Routing\Middleware\ThrottleRequests::class);
-        $this->post(route('saas.otp.send'), ['email' => $user->email]);
-        $this->assertDatabaseCount('saas_email_otp_challenges', 2);
-        $this->assertNotNull($old->fresh()->consumed_at);
-        Mail::assertSent(SaasEmailOtpMail::class, 2);
-    }
-
-    public function test_unknown_email_has_same_response_and_does_not_create_session(): void
-    {
-        $this->post(route('saas.otp.send'), ['email' => 'unknown@example.test'])
-            ->assertRedirect(route('saas.otp.verify.form'))
-            ->assertSessionHas('status');
-        Mail::assertNothingSent();
-        $this->post(route('saas.otp.verify'), ['code' => '123456'])
-            ->assertSessionHasErrors('code');
-        $this->assertGuest();
-    }
-
-    public function test_smtp_failure_is_recoverable_and_does_not_log_customer_in(): void
-    {
-        Mail::swap(new class {
-            public function to(): never
-            {
-                throw new \RuntimeException('SMTP unavailable');
-            }
-        });
+        $this->post(route('saas.register.submit'), [
+            'name' => 'Owner', 'workspace_name' => 'Testing shop',
+            'email' => 'test-shop@example.test',
+        ])->assertSessionHasErrors('password');
+        $this->assertDatabaseCount('users', 0);
 
         $this->post(route('saas.register.submit'), [
-            'name' => 'New Customer', 'workspace_name' => 'Email Down',
-            'email' => 'mail-down@example.test',
-        ])->assertRedirect(route('saas.otp.verify.form'))
-            ->assertSessionHas('error');
+            'name' => 'Owner', 'workspace_name' => 'Testing shop',
+            'email' => 'test-shop@example.test',
+            'password' => 'SecurePasswordExample123',
+            'password_confirmation' => 'SecurePasswordExample123',
+        ])->assertRedirect(route('saas.login'));
 
-        $this->assertDatabaseHas('users', ['email' => 'mail-down@example.test']);
-        $this->assertDatabaseCount('saas_email_otp_challenges', 0);
+        $user = User::where('email', 'test-shop@example.test')->firstOrFail();
+        $this->assertTrue(Hash::check('SecurePasswordExample123', $user->password));
+        $this->assertNull($user->saas_manually_approved_at);
+        $this->assertNull($user->email_verified_at);
+        $this->assertGuest();
+        Mail::assertNothingSent();
+    }
+
+    public function test_otp_endpoints_are_removed_not_only_hidden_in_view(): void
+    {
+        $this->get('/app/otp')->assertNotFound();
+        $this->post('/app/otp/send', ['email' => 'test@example.test'])->assertNotFound();
+        $this->post('/app/otp/verify', ['code' => '123456'])->assertNotFound();
+        $this->get(route('saas.login'))->assertOk()
+            ->assertSee('Sign in with password')
+            ->assertDontSee('Continue with email OTP');
+        Mail::assertNothingSent();
+    }
+
+    public function test_valid_password_still_requires_admin_activation(): void
+    {
+        [$user] = $this->customer();
+        $this->post(route('saas.login.submit'), [
+            'email' => $user->email,
+            'password' => 'ExistingCustomerPassword123',
+        ])->assertSessionHasErrors('email');
         $this->assertGuest();
     }
 
-    public function test_otp_login_does_not_grant_a_legacy_unscoped_user_customer_access(): void
+    public function test_only_platform_admin_can_approve_and_reset_customer_password(): void
     {
-        $legacy = User::factory()->create(['email' => 'legacy@example.test']);
-        $this->post(route('saas.otp.send'), ['email' => $legacy->email])
-            ->assertSessionHas('status');
-        Mail::assertNothingSent();
+        [$user] = $this->customer();
+
+        $this->post(route('bdp.saas.customers.approve', $user), [
+            'password' => 'ChangedCustomerPassword123',
+            'password_confirmation' => 'ChangedCustomerPassword123',
+        ])->assertRedirect(route('bdp.login.form'));
+        $this->assertNull($user->fresh()->saas_manually_approved_at);
+
+        $this->platformAdmin();
+        $this->get(route('bdp.saas.customers'))->assertOk()
+            ->assertSee($user->email);
+        $this->post(route('bdp.saas.customers.approve', $user), [
+            'password' => 'ChangedCustomerPassword123',
+            'password_confirmation' => 'ChangedCustomerPassword123',
+        ])->assertRedirect();
+
+        $user->refresh();
+        $this->assertNotNull($user->saas_manually_approved_at);
+        $this->assertNull($user->email_verified_at);
+        $this->assertTrue($user->saas_password_change_required);
+        $this->assertTrue(Hash::check('ChangedCustomerPassword123', $user->password));
+        $this->assertDatabaseHas('saas_customer_admin_events', [
+            'user_id' => $user->id, 'event' => 'activated_and_password_rotated',
+        ]);
+    }
+
+    public function test_approved_user_must_change_admin_set_temporary_password(): void
+    {
+        [$user, $workspace] = $this->customer();
+        $user->forceFill([
+            'saas_manually_approved_at' => now(),
+            'saas_password_change_required' => true,
+        ])->save();
+
+        $this->post(route('saas.login.submit'), [
+            'email' => strtoupper($user->email),
+            'password' => 'ExistingCustomerPassword123',
+        ])->assertRedirect(route('saas.password.change.form'));
+        $this->assertAuthenticatedAs($user);
+        $this->get(route('saas.home'))->assertRedirect(route('saas.password.change.form'));
+        $this->get(route('saas.workspace.dashboard', $workspace->public_id))
+            ->assertRedirect(route('saas.password.change.form'));
+
+        $this->post(route('saas.password.change'), [
+            'current_password' => 'bad-password',
+            'password' => 'BrandNewCustomerPassword123',
+            'password_confirmation' => 'BrandNewCustomerPassword123',
+        ])->assertSessionHasErrors('current_password');
+
+        $this->post(route('saas.password.change'), [
+            'current_password' => 'ExistingCustomerPassword123',
+            'password' => 'BrandNewCustomerPassword123',
+            'password_confirmation' => 'BrandNewCustomerPassword123',
+        ])->assertRedirect(route('saas.home'));
+        $this->assertFalse($user->fresh()->saas_password_change_required);
+        $this->assertTrue(Hash::check('BrandNewCustomerPassword123', $user->fresh()->password));
+        $this->assertNull($user->fresh()->email_verified_at);
+        $this->get(route('saas.workspace.dashboard', $workspace->public_id))->assertOk();
+    }
+
+    public function test_valid_existing_email_verified_customer_can_use_password(): void
+    {
+        [$user, $workspace] = $this->customer(verified: true);
+        $this->post(route('saas.login.submit'), [
+            'email' => $user->email,
+            'password' => 'ExistingCustomerPassword123',
+        ])->assertRedirect(route('saas.home'));
+        $this->assertAuthenticatedAs($user);
+        $this->get(route('saas.workspace.dashboard', $workspace->public_id))->assertOk();
+    }
+
+    public function test_wrong_password_legacy_only_and_suspended_users_remain_denied(): void
+    {
+        [$user, $workspace] = $this->customer(verified: true);
+        $this->post(route('saas.login.submit'), [
+            'email' => $user->email, 'password' => 'bad',
+        ])->assertSessionHasErrors('email');
+        $this->assertGuest();
+
+        $workspace->status = 'suspended';
+        $workspace->save();
+        $this->post(route('saas.login.submit'), [
+            'email' => $user->email, 'password' => 'ExistingCustomerPassword123',
+        ])->assertSessionHasErrors('email');
+        $this->assertGuest();
+
+        $legacy = User::factory()->create(['email_verified_at' => now()]);
+        $this->post(route('saas.login.submit'), [
+            'email' => $legacy->email, 'password' => 'password',
+        ])->assertSessionHasErrors('email');
         $this->assertGuest();
     }
 }
