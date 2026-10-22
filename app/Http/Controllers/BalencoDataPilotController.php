@@ -91,12 +91,3235 @@ class BalencoDataPilotController extends Controller
         $mappedCategories = BdpCategoryMapping::whereNotNull('balenco_category_id')->count();
         $pendingCategories = BdpCategoryMapping::whereNull('balenco_category_id')->count();
 
+        // Reflect the saved pricing rules; the previous dashboard showed
+        // hard-coded sample amounts even after an administrator changed them.
+        $country = strtoupper((string) \App\Models\BdpSetting::getValue('default_shipping_country', 'US'));
+        $marginType = (string) \App\Models\BdpSetting::getValue('default_margin_type', 'fixed');
+        $margin = (float) \App\Models\BdpSetting::getValue('default_margin_value', '20');
+        $minimum = (float) \App\Models\BdpSetting::getValue('minimum_selling_price', '39.99');
+        $rounding = (string) \App\Models\BdpSetting::getValue('retail_rounding', 'up_99');
+
         $pricingSummary = [
-            'Destination Country' => 'United States (US)',
-            'Margin Type' => 'Fixed amount',
-            'Margin Value' => '$20.00',
-            'Minimum Selling Price' => '$39.99',
-            'Retail Rounding' => 'Round up to .99',
+            'Destination Country' => $country ?: 'US',
+            'Margin Type' => $marginType === 'percentage' ? 'Percentage' : 'Fixed amount',
+            'Margin Value' => $marginType === 'percentage' ? number_format($margin, 2) . '%' : '
+
+        return view('balenco-data-pilot.dashboard', compact(
+            'stats',
+            'recentProducts',
+            'recentLogs',
+            'mappedCategories',
+            'pendingCategories',
+            'pricingSummary'
+        ));
+    }
+
+    public function products(Request $request)
+    {
+        $sync = $request->query('sync', 'all');
+        $search = trim((string) $request->query('q', ''));
+        $status = $request->query('status', 'all');
+        $category = trim((string) $request->query('category', ''));
+        $perPage = (int) $request->query('per_page', 25);
+        $perPage = in_array($perPage, [10, 25, 50, 100], true) ? $perPage : 25;
+
+        $query = BdpProduct::withCount('variations')
+            ->withMin('variations as min_variation_price', 'price')
+            ->withMin('variations as min_variation_cost', 'cost_per_item')
+            ->withSum('variations as variations_total_quantity', 'quantity')
+            ->latest();
+
+        if ($search !== '') {
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                  ->orWhere('sku', 'like', "%{$search}%")
+                  ->orWhere('categories', 'like', "%{$search}%");
+            });
+        }
+
+        if ($status !== 'all' && $status !== '') {
+            $query->where('status', $status);
+        }
+
+        if ($category !== '') {
+            $query->where('categories', 'like', "%{$category}%");
+        }
+
+        if ($sync === 'synced') {
+            $query->whereNotNull('shofy_product_id');
+        } elseif ($sync === 'not_synced') {
+            $query->whereNull('shofy_product_id');
+        } elseif ($sync === 'failed') {
+            $query->where('balenco_sync_status', 'sync_failed');
+        } elseif ($sync === 'needs_review') {
+            $query->where(function ($q) {
+                $q->whereNull('sku')
+                  ->orWhere('sku', '')
+                  ->orWhereNull('price')
+                  ->orWhereDoesntHave('variations');
+            });
+        }
+
+
+        $labelId = request('label_id');
+        if ($labelId && \Illuminate\Support\Facades\Schema::hasTable('bdp_label_product')) {
+            $query->whereExists(function ($sub) use ($labelId) {
+                $sub->select(\Illuminate\Support\Facades\DB::raw(1))
+                    ->from('bdp_label_product')
+                    ->whereColumn('bdp_label_product.product_id', 'bdp_products.id')
+                    ->where('bdp_label_product.label_id', $labelId);
+            });
+        }
+
+        $disabled = request('disabled', 'active');
+        if (\Illuminate\Support\Facades\Schema::hasColumn('bdp_products', 'disabled_at')) {
+            if ($disabled === 'disabled') {
+                $query->whereNotNull('disabled_at');
+            } elseif ($disabled !== 'all') {
+                $query->whereNull('disabled_at');
+            }
+        }
+
+        $products = $query->paginate($perPage)->withQueryString();
+        $counts = $this->dashboardStats();
+
+                $seoStatus = $request->input('seo_status', 'all');
+return view('balenco-data-pilot.products', compact(
+            'products',
+            'sync',
+            'counts',
+            'search',
+            'status',
+            'category',
+            'perPage'
+        , 'seoStatus'));
+    }
+
+    protected function dashboardStats(): array
+    {
+        $needsReview = BdpProduct::where(function ($q) {
+            $q->whereNull('sku')
+              ->orWhere('sku', '')
+              ->orWhereNull('price')
+              ->orWhereDoesntHave('variations');
+        })->count();
+
+        return [
+            'all' => BdpProduct::count(),
+            'synced' => BdpProduct::whereNotNull('shofy_product_id')->count(),
+            'not_synced' => BdpProduct::whereNull('shofy_product_id')->count(),
+            'failed' => BdpProduct::where('balenco_sync_status', 'sync_failed')->count(),
+            'needs_review' => $needsReview,
+            'variations' => BdpProductVariation::count(),
+            'low_stock' => BdpProductVariation::whereNotNull('quantity')->where('quantity', '<=', 5)->count(),
+            'draft' => BdpProduct::where('status', 'draft')->count(),
+            'published' => BdpProduct::where('status', 'published')->count(),
+        ];
+    }
+
+
+    public function categoryMapping(BdpShofyCategoryService $categoryService)
+    {
+        try {
+            $sourceCategories = $categoryService->sourceCategories();
+            $balencoCategories = $categoryService->balencoCategories();
+            $mappings = BdpCategoryMapping::query()->get()->keyBy(fn ($item) => mb_strtolower($item->source_category));
+
+            return view('balenco-data-pilot.category-mapping', compact('sourceCategories', 'balencoCategories', 'mappings'));
+        } catch (\Throwable $e) {
+            return redirect()->route('bdp.index')->with('error', 'Category mapping error: ' . $e->getMessage());
+        }
+    }
+
+    public function saveCategoryMapping(Request $request)
+    {
+        $data = $request->validate([
+            'mappings' => ['nullable', 'array'],
+            'category_names' => ['nullable', 'array'],
+        ]);
+
+        $saved = 0;
+        foreach (($data['mappings'] ?? []) as $sourceCategory => $balencoCategoryId) {
+            $sourceCategory = trim((string) $sourceCategory);
+            if ($sourceCategory === '') {
+                continue;
+            }
+
+            $balencoCategoryId = $balencoCategoryId !== '' ? (int) $balencoCategoryId : null;
+            $balencoCategoryName = null;
+
+            if ($balencoCategoryId) {
+                $balencoCategoryName = $data['category_names'][$balencoCategoryId] ?? null;
+            }
+
+            BdpCategoryMapping::updateOrCreate(
+                ['source_category' => $sourceCategory],
+                [
+                    'balenco_category_id' => $balencoCategoryId,
+                    'balenco_category_name' => $balencoCategoryName,
+                ]
+            );
+            $saved++;
+        }
+
+        return redirect()->route('bdp.categories.mapping')->with('success', "Saved {$saved} category mappings.");
+    }
+
+    public function bulkAssignCategory(Request $request)
+    {
+        $data = $request->validate([
+            'products' => ['required', 'array'],
+            'products.*' => ['integer'],
+            'category' => ['required', 'string', 'max:255'],
+            'mode' => ['nullable', Rule::in(['replace', 'append'])],
+        ]);
+
+        $products = BdpProduct::whereIn('id', $data['products'])->get();
+        $updated = 0;
+        foreach ($products as $product) {
+            $product->categories = ($data['mode'] ?? 'replace') === 'append'
+                ? $this->mergeCommaValues($product->categories, $data['category'])
+                : $data['category'];
+            $product->save();
+            $updated++;
+        }
+
+        return back()->with('success', "Assigned category to {$updated} products.");
+    }
+
+    public function importForm()
+    {
+        return view('balenco-data-pilot.import');
+    }
+
+    public function import(Request $request, BdpWooCsvImporter $wooImporter, BdpCjaImporter $cjaImporter)
+    {
+        $data = $request->validate([
+            'source' => ['required', Rule::in(['woocommerce', 'cja'])],
+            'file' => ['required', 'file', 'mimes:csv,txt,xlsx,xlsm'],
+        ]);
+
+        $importer = $data['source'] === 'cja' ? $cjaImporter : $wooImporter;
+        $result = $importer->import($request->file('file'));
+
+        $sourceLabel = $data['source'] === 'cja' ? 'CJA' : 'WooCommerce';
+
+        return redirect()->route('bdp.index')->with('success', "Imported {$result['products']} {$sourceLabel} products and {$result['variations']} variations.");
+    }
+
+    public function edit(BdpProduct $product)
+    {
+        $product->load('variations');
+        return view('balenco-data-pilot.edit', compact('product'));
+    }
+
+    public function update(Request $request, BdpProduct $product)
+    {
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'slug' => ['nullable', 'string', 'max:255'],
+            'sku' => ['nullable', 'string', 'max:255'],
+            'short_description' => ['nullable', 'string'],
+            'content' => ['nullable', 'string'],
+            'price' => ['nullable', 'numeric'],
+            'sale_price' => ['nullable', 'numeric'],
+            'categories' => ['nullable', 'string'],
+            'tags' => ['nullable', 'string'],
+            'seo_title' => ['nullable', 'string', 'max:255'],
+            'seo_description' => ['nullable', 'string'],
+            'focus_keyword' => ['nullable', 'string', 'max:255'],
+            'featured_image' => ['nullable', 'string'],
+            'gallery_images' => ['nullable', 'string'],
+        ]);
+
+        $data['slug'] = $data['slug'] ?: Str::slug($data['name']);
+        $product->update($data);
+
+        foreach ($request->input('variations', []) as $id => $variationData) {
+            BdpProductVariation::where('bdp_product_id', $product->id)->where('id', $id)->update([
+                'color' => $variationData['color'] ?? null,
+                'size_raw' => $variationData['size_raw'] ?? null,
+                'size_us' => $variationData['size_us'] ?? null,
+                'price' => $variationData['price'] ?? null,
+                'sale_price' => $variationData['sale_price'] ?? null,
+                'quantity' => $variationData['quantity'] ?? null,
+                'stock_status' => $variationData['stock_status'] ?? 'in_stock',
+                'image' => $variationData['image'] ?? null,
+                'is_default' => !empty($variationData['is_default']),
+            ]);
+        }
+
+        return back()->with('success', 'Product updated.');
+    }
+
+
+    public function bulkEdit(Request $request)
+    {
+        $ids = array_filter((array) $request->input('products', []));
+        if (empty($ids)) {
+            return back()->with('error', 'Please select at least one product for bulk edit.');
+        }
+
+        $products = BdpProduct::whereIn('id', $ids)
+            ->withCount('variations')
+            ->orderBy('name')
+            ->get();
+
+        return view('balenco-data-pilot.bulk-edit', compact('products', 'ids'));
+    }
+
+    public function bulkUpdate(Request $request)
+    {
+        $data = $request->validate([
+            'products' => ['required', 'array'],
+            'products.*' => ['integer'],
+            'category_action' => ['nullable', Rule::in(['ignore', 'replace', 'append'])],
+            'categories' => ['nullable', 'string'],
+            'tags_action' => ['nullable', Rule::in(['ignore', 'replace', 'append'])],
+            'tags' => ['nullable', 'string'],
+            'focus_keyword_action' => ['nullable', Rule::in(['ignore', 'replace'])],
+            'focus_keyword' => ['nullable', 'string', 'max:255'],
+            'seo_title_template' => ['nullable', 'string', 'max:255'],
+            'seo_description_template' => ['nullable', 'string'],
+            'short_description_template' => ['nullable', 'string'],
+            'content_prefix_template' => ['nullable', 'string'],
+            'content_suffix_template' => ['nullable', 'string'],
+        ]);
+
+        $ids = array_filter((array) ($data['products'] ?? []));
+        $products = BdpProduct::whereIn('id', $ids)->get();
+        $updated = 0;
+
+        foreach ($products as $product) {
+            $update = [];
+            $tokens = $this->bulkTemplateTokens($product);
+
+            if (!empty($data['seo_title_template'])) {
+                $update['seo_title'] = Str::limit($this->applyBulkTemplate($data['seo_title_template'], $tokens), 255, '');
+            }
+
+            if (!empty($data['seo_description_template'])) {
+                $update['seo_description'] = $this->applyBulkTemplate($data['seo_description_template'], $tokens);
+            }
+
+            if (!empty($data['short_description_template'])) {
+                $update['short_description'] = $this->applyBulkTemplate($data['short_description_template'], $tokens);
+            }
+
+            if (!empty($data['content_prefix_template'])) {
+                $prefix = $this->applyBulkTemplate($data['content_prefix_template'], $tokens);
+                $update['content'] = $prefix . "\n" . (string) $product->content;
+            }
+
+            if (!empty($data['content_suffix_template'])) {
+                $suffix = $this->applyBulkTemplate($data['content_suffix_template'], $tokens);
+                $update['content'] = (array_key_exists('content', $update) ? $update['content'] : (string) $product->content) . "\n" . $suffix;
+            }
+
+            $categoryAction = $data['category_action'] ?? 'ignore';
+            if ($categoryAction !== 'ignore' && !empty($data['categories'])) {
+                $update['categories'] = $categoryAction === 'append'
+                    ? $this->mergeCommaValues($product->categories, $data['categories'])
+                    : $data['categories'];
+            }
+
+            $tagsAction = $data['tags_action'] ?? 'ignore';
+            if ($tagsAction !== 'ignore' && !empty($data['tags'])) {
+                $update['tags'] = $tagsAction === 'append'
+                    ? $this->mergeCommaValues($product->tags, $data['tags'])
+                    : $data['tags'];
+            }
+
+            $focusAction = $data['focus_keyword_action'] ?? 'ignore';
+            if ($focusAction === 'replace' && !empty($data['focus_keyword'])) {
+                $update['focus_keyword'] = $data['focus_keyword'];
+            }
+
+            if (!empty($update)) {
+                $product->update($update);
+                $updated++;
+            }
+        }
+
+        return redirect()->route('bdp.index')->with('success', "Bulk updated {$updated} products.");
+    }
+
+    protected function bulkTemplateTokens(BdpProduct $product): array
+    {
+        return [
+            'product_name' => (string) $product->name,
+            'name' => (string) $product->name,
+            'sku' => (string) $product->sku,
+            'category' => (string) $product->categories,
+            'categories' => (string) $product->categories,
+            'price' => $product->price !== null ? number_format((float) $product->price, 2) : '',
+            'brand' => 'Balenco',
+            'store' => 'Balenco',
+        ];
+    }
+
+    protected function applyBulkTemplate(string $template, array $tokens): string
+    {
+        foreach ($tokens as $key => $value) {
+            $template = str_replace(['{' . $key . '}', '{{' . $key . '}}'], $value, $template);
+        }
+
+        return trim($template);
+    }
+
+    protected function mergeCommaValues(?string $existing, string $new): string
+    {
+        $items = [];
+        foreach (explode(',', (string) $existing . ',' . $new) as $item) {
+            $item = trim($item);
+            if ($item !== '') {
+                $items[mb_strtolower($item)] = $item;
+            }
+        }
+
+        return implode(', ', array_values($items));
+    }
+
+
+    public function cjSettings(BdpCjApiService $cj)
+    {
+        $token = $cj->token();
+        return view('balenco-data-pilot.cj-settings', compact('token'));
+    }
+
+    public function saveCjSettings(Request $request, BdpCjApiService $cj)
+    {
+        $data = $request->validate([
+            'api_key' => ['required', 'string', 'max:255'],
+        ]);
+
+        $cj->saveApiKey($data['api_key']);
+
+        return redirect()->route('bdp.cj.settings')->with('success', 'CJ API key saved. Now click Get Access Token.');
+    }
+
+    public function getCjToken(BdpCjApiService $cj)
+    {
+        try {
+            $cj->getAccessToken();
+            return redirect()->route('bdp.cj.settings')->with('success', 'CJ access token received successfully.');
+        } catch (\Throwable $e) {
+            return redirect()->route('bdp.cj.settings')->with('error', 'CJ token error: ' . $e->getMessage());
+        }
+    }
+
+    public function refreshCjToken(BdpCjApiService $cj)
+    {
+        try {
+            $cj->refreshAccessToken();
+            return redirect()->route('bdp.cj.settings')->with('success', 'CJ access token refreshed successfully.');
+        } catch (\Throwable $e) {
+            return redirect()->route('bdp.cj.settings')->with('error', 'CJ refresh error: ' . $e->getMessage());
+        }
+    }
+
+    public function testCjConnection(BdpCjApiService $cj)
+    {
+        try {
+            $cj->testConnection();
+            return redirect()->route('bdp.cj.settings')->with('success', 'CJ connection test successful.');
+        } catch (\Throwable $e) {
+            return redirect()->route('bdp.cj.settings')->with('error', 'CJ connection test failed: ' . $e->getMessage());
+        }
+    }
+
+    public function cjImportForm(Request $request, BdpCjApiService $cj)
+    {
+        $results = null;
+        $keyword = (string) $request->query('keyword', '');
+        if ($request->filled('keyword')) {
+            try {
+                $results = $cj->searchProducts([
+                    'keyword' => $keyword,
+                    'page' => (int) $request->query('page', 1),
+                    'size' => (int) $request->query('size', 20),
+                    'country_code' => $request->query('country_code'),
+                    'min_price' => $request->query('min_price'),
+                    'max_price' => $request->query('max_price'),
+                ]);
+            } catch (\Throwable $e) {
+                return redirect()->route('bdp.cj.import')->with('error', 'CJ search failed: ' . $e->getMessage());
+            }
+        }
+
+        return view('balenco-data-pilot.cj-import', compact('results', 'keyword'));
+    }
+
+    public function importFromCj(Request $request, BdpCjApiService $cj)
+    {
+        $data = $request->validate([
+            'pid' => ['nullable', 'string', 'max:255'],
+            'product_sku' => ['nullable', 'string', 'max:255'],
+            'variant_sku' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        if (empty($data['pid']) && empty($data['product_sku']) && empty($data['variant_sku'])) {
+            return back()->with('error', 'Please provide a CJ product ID, product SKU, or variant SKU.');
+        }
+
+        try {
+            $product = $cj->importProduct($data['pid'] ?? null, $data['product_sku'] ?? null, $data['variant_sku'] ?? null);
+            return redirect()->route('bdp.products.edit', $product)->with('success', 'Imported CJ product into Data Pilot. Review it before syncing to Balenco.');
+        } catch (\Throwable $e) {
+            return back()->with('error', 'CJ import failed: ' . $e->getMessage());
+        }
+    }
+
+
+
+    public function importMultipleFromCj(Request $request, BdpCjApiService $cj)
+    {
+        $data = $request->validate([
+            'items' => ['required', 'array', 'min:1'],
+            'items.*' => ['required', 'string'],
+        ]);
+
+        $imported = 0;
+        $failed = 0;
+        $errors = [];
+
+        foreach ($data['items'] as $encodedItem) {
+            $decoded = json_decode(base64_decode((string) $encodedItem, true) ?: '', true);
+
+            if (! is_array($decoded)) {
+                $failed++;
+                $errors[] = 'Invalid selected product payload.';
+                continue;
+            }
+
+            $pid = trim((string) ($decoded['pid'] ?? ''));
+            $productSku = trim((string) ($decoded['product_sku'] ?? ''));
+
+            if ($pid === '' && $productSku === '') {
+                $failed++;
+                $errors[] = 'Selected product is missing PID and SKU.';
+                continue;
+            }
+
+            try {
+                $cj->importProduct($pid ?: null, $productSku ?: null, null);
+                $imported++;
+            } catch (\Throwable $e) {
+                $failed++;
+                $label = $productSku ?: $pid ?: 'Unknown product';
+                $errors[] = $label . ': ' . $e->getMessage();
+            }
+        }
+
+        $message = "Bulk CJ import complete: {$imported} imported";
+        if ($failed > 0) {
+            $message .= " and {$failed} failed";
+        }
+
+        if (! empty($errors)) {
+            $message .= '. ' . implode(' | ', array_slice($errors, 0, 3));
+        }
+
+        return redirect()->route('bdp.products')->with($imported > 0 ? 'success' : 'error', $message . '.');
+    }
+
+
+
+    public function fetchCjReviews(Request $request, BdpProduct $product, BdpCjApiService $cj)
+    {
+        $data = $request->validate([
+            'max_reviews' => ['nullable', 'integer', 'min:1', 'max:12'],
+        ]);
+
+        $pid = trim((string) ($product->source_id ?: $product->source_product_id ?: ''));
+        if (! $pid) {
+            return back()->with('error', 'CJ product PID/source ID is missing. Cannot fetch reviews.');
+        }
+
+        $maxReviews = min((int) ($data['max_reviews'] ?? 12), 12);
+        $scores = [5, 4];
+        $saved = 0;
+        $seen = [];
+        $remaining = $maxReviews;
+
+        foreach ($scores as $score) {
+            if ($remaining <= 0) {
+                break;
+            }
+
+            try {
+                $response = $cj->productReviews($pid, $score, 1, $remaining);
+            } catch (\Throwable $e) {
+                if ($score === 5 && $saved === 0) {
+                    return back()->with('error', 'CJ reviews fetch failed: ' . $e->getMessage());
+                }
+                continue;
+            }
+
+            $reviews = data_get($response, 'data.list', []);
+            if (! is_array($reviews)) {
+                $reviews = [];
+            }
+
+            foreach ($reviews as $review) {
+                if (! is_array($review)) {
+                    continue;
+                }
+
+                $commentId = (string) ($review['commentId'] ?? '');
+                if ($commentId === '' || isset($seen[$commentId])) {
+                    continue;
+                }
+                $seen[$commentId] = true;
+
+                $comment = trim((string) ($review['comment'] ?? ''));
+                if ($comment === '') {
+                    continue;
+                }
+
+                $reviewDate = null;
+                if (! empty($review['commentDate'])) {
+                    $ts = strtotime((string) $review['commentDate']);
+                    $reviewDate = $ts ? date('Y-m-d H:i:s', $ts) : null;
+                }
+
+                BdpProductReview::updateOrCreate(
+                    ['source' => 'cj', 'source_review_id' => $commentId],
+                    [
+                        'bdp_product_id' => $product->id,
+                        'source_product_id' => (string) ($review['pid'] ?? $pid),
+                        'score' => (int) ($review['score'] ?? $score),
+                        'reviewer_name' => (string) ($review['commentUser'] ?? ''),
+                        'review_text' => $comment,
+                        'review_date' => $reviewDate,
+                        'country_code' => (string) ($review['countryCode'] ?? ''),
+                        'flag_icon_url' => (string) ($review['flagIconUrl'] ?? ''),
+                        'review_images' => array_values(array_filter((array) ($review['commentUrls'] ?? []))),
+                        'is_approved' => false,
+                        'is_pushed' => false,
+                        'raw_json' => $review,
+                    ]
+                );
+
+                $saved++;
+                $remaining = $maxReviews - $saved;
+                if ($remaining <= 0) {
+                    break;
+                }
+            }
+        }
+
+        return back()->with('success', "Fetched {$saved} CJ reviews. Only 5-star and 4-star reviews were imported, max {$maxReviews}.");
+    }
+
+    public function refreshCjInventoryShipping(Request $request, BdpProduct $product, BdpCjApiService $cj)
+    {
+        $data = $request->validate([
+            'country_code' => ['nullable', 'string', 'max:10'],
+            'quantity' => ['nullable', 'integer', 'min:1', 'max:100'],
+        ]);
+
+        try {
+            $product->load('variations');
+            $country = strtoupper($data['country_code'] ?? env('BDP_CJ_DEFAULT_SHIPPING_COUNTRY', 'US'));
+            $quantity = (int) ($data['quantity'] ?? 1);
+            $result = $cj->refreshInventoryAndShipping($product, $country ?: 'US', $quantity ?: 1);
+
+            $message = "CJ refresh complete: {$result['inventory']} inventory rows updated and {$result['shipping']} product-level shipping estimate saved.";
+            if (!empty($result['errors'])) {
+                $message .= ' Some rows had errors: ' . implode(' | ', array_slice($result['errors'], 0, 3));
+            }
+
+            return redirect()->route('bdp.products.edit', $product)->with('success', $message);
+        } catch (\Throwable $e) {
+            return redirect()->route('bdp.products.edit', $product)->with('error', 'CJ inventory/shipping refresh failed: ' . $e->getMessage());
+        }
+    }
+
+    public function apiLogs(Request $request)
+    {
+        $logs = BdpApiLog::query()
+            ->when($request->filled('status'), fn ($q) => $q->where('status_code', (int) $request->query('status')))
+            ->when($request->filled('endpoint'), fn ($q) => $q->where('endpoint', 'like', '%' . $request->query('endpoint') . '%'))
+            ->latest('id')
+            ->paginate(50)
+            ->withQueryString();
+
+        return view('balenco-data-pilot.api-logs', compact('logs'));
+    }
+
+    public function clearApiLogs()
+    {
+        BdpApiLog::query()->delete();
+
+        return redirect()->route('bdp.api.logs')->with('success', 'API logs cleared.');
+    }
+
+
+    public function bulkPricing(Request $request, BdpCjApiService $cj)
+    {
+        $data = $request->validate([
+            'products' => ['required', 'array'],
+            'products.*' => ['integer'],
+            'country_code' => ['nullable', 'string', 'max:10'],
+            'quantity' => ['nullable', 'integer', 'min:1', 'max:100'],
+            'margin_type' => ['required', Rule::in(['fixed', 'percent'])],
+            'margin_value' => ['required', 'numeric', 'min:0', 'max:10000'],
+            'round_mode' => ['nullable', Rule::in(['none', '99', '95', '00'])],
+            'minimum_price' => ['nullable', 'numeric', 'min:0', 'max:10000'],
+            'refresh_shipping' => ['nullable', 'boolean'],
+        ]);
+
+        $products = BdpProduct::with('variations')->whereIn('id', $data['products'])->get();
+        if ($products->isEmpty()) {
+            return back()->with('error', 'No selected products were found.');
+        }
+
+        $country = strtoupper($data['country_code'] ?: env('BDP_CJ_DEFAULT_SHIPPING_COUNTRY', 'US'));
+        $quantity = (int) ($data['quantity'] ?? 1);
+        $marginType = $data['margin_type'];
+        $marginValue = (float) $data['margin_value'];
+        $roundMode = $data['round_mode'] ?? '99';
+        $minimumPrice = $data['minimum_price'] !== null && $data['minimum_price'] !== '' ? (float) $data['minimum_price'] : null;
+        $refreshShipping = (bool) ($data['refresh_shipping'] ?? false);
+
+        $updated = 0;
+        $refreshed = 0;
+        $errors = [];
+
+        foreach ($products as $index => $product) {
+            try {
+                /**
+                 * Shipping refresh is now optional only.
+                 * Cron is responsible for refreshing cj_shipping_fee and landed_cost.
+                 * Bulk Price Update normally applies margin to existing landed cost.
+                 */
+                if ($refreshShipping) {
+                    $result = $cj->refreshInventoryAndShipping($product, $country ?: 'US', $quantity ?: 1);
+                    $refreshed++;
+
+                    if (!empty($result['errors'])) {
+                        $errors[] = $product->name . ': ' . implode(' | ', array_slice($result['errors'], 0, 2));
+                    }
+
+                    // CJA logistics has strict QPS limits, so keep manual bulk refresh gentle.
+                    if ($products->count() > 1 && $index < $products->count() - 1) {
+                        sleep(1);
+                    }
+                }
+
+                $product->refresh();
+                $product->load('variations');
+
+                $shippingFee = $product->cj_shipping_fee;
+
+                $finalPrices = [];
+                foreach ($product->variations as $variation) {
+                    $variationLanded = $variation->landed_cost;
+
+                    if ($variationLanded === null || $variationLanded === '') {
+                        $cjCost = $variation->cost_per_item;
+                        if ($cjCost === null || $cjCost === '') {
+                            $cjCost = $variation->price ?: $product->cost_per_item ?: $product->price;
+                        }
+
+                        if (($shippingFee === null || $shippingFee === '') && !$refreshShipping) {
+                            $errors[] = $product->name . ': shipping/landed cost is missing. Wait for cron or select refresh CJA shipping before bulk price update.';
+                            continue 2;
+                        }
+
+                        if ($cjCost === null || $cjCost === '') {
+                            continue;
+                        }
+
+                        $variationLanded = round((float) $cjCost + (float) $shippingFee, 2);
+
+                        $variation->forceFill([
+                            'cost_per_item' => round((float) $cjCost, 2),
+                            'cj_shipping_fee' => $shippingFee !== null && $shippingFee !== '' ? (float) $shippingFee : null,
+                            'landed_cost' => $variationLanded,
+                        ])->save();
+                    }
+
+                    $selling = $this->calculateSellingPrice((float) $variationLanded, $marginType, $marginValue, $roundMode, $minimumPrice);
+
+                    $variation->forceFill([
+                        'price' => $selling,
+                        'sale_price' => null,
+                    ])->save();
+
+                    $finalPrices[] = $selling;
+                }
+
+                if (empty($finalPrices)) {
+                    $errors[] = $product->name . ': no variation landed costs were available for pricing.';
+                    continue;
+                }
+
+                $productLanded = $product->landed_cost;
+                if ($productLanded === null || $productLanded === '') {
+                    $baseCost = $product->variations()->whereNotNull('cost_per_item')->min('cost_per_item') ?: $product->cost_per_item ?: $product->price;
+
+                    if (($shippingFee === null || $shippingFee === '') && !$refreshShipping) {
+                        $errors[] = $product->name . ': product landed cost is missing. Wait for cron or select refresh CJA shipping before bulk price update.';
+                        continue;
+                    }
+
+                    $productLanded = $baseCost !== null ? round((float) $baseCost + (float) $shippingFee, 2) : null;
+                }
+
+                $product->forceFill([
+                    'landed_cost' => $productLanded,
+                    'price' => min($finalPrices),
+                    'sale_price' => null,
+                    'balenco_sync_status' => $product->shofy_product_id ? $product->balenco_sync_status : 'not_synced',
+                    'balenco_sync_message' => sprintf(
+                        'Bulk price updated from landed cost + %s margin %s, rounded %s%s.',
+                        $marginType === 'fixed' ? '$' : '',
+                        rtrim(rtrim(number_format($marginValue, 2), '0'), '.'),
+                        $roundMode,
+                        $refreshShipping ? ' after CJA shipping refresh' : ''
+                    ),
+                ])->save();
+
+                $updated++;
+            } catch (\Throwable $e) {
+                $errors[] = $product->name . ': ' . $e->getMessage();
+            }
+        }
+
+        $message = "Bulk price update completed for {$updated} products" . ($refreshed ? " and refreshed CJA shipping for {$refreshed} products" : '') . '.';
+        if (!empty($errors)) {
+            $message .= ' Notes: ' . implode(' | ', array_slice($errors, 0, 5));
+        }
+
+        return back()->with(empty($errors) ? 'success' : 'error', $message);
+    }
+
+    protected function calculateSellingPrice(float $landedCost, string $marginType, float $marginValue, string $roundMode = '99', ?float $minimumPrice = null): float
+    {
+        $price = $marginType === 'percent'
+            ? $landedCost * (1 + ($marginValue / 100))
+            : $landedCost + $marginValue;
+
+        if ($minimumPrice !== null) {
+            $price = max($price, $minimumPrice);
+        }
+
+        return round($this->roundRetailPrice($price, $roundMode), 2);
+    }
+
+    protected function roundRetailPrice(float $price, string $roundMode): float
+    {
+        if ($roundMode === 'none') {
+            return $price;
+        }
+
+        if ($roundMode === '00') {
+            return ceil($price);
+        }
+
+        $cents = $roundMode === '95' ? 0.95 : 0.99;
+        $rounded = floor($price) + $cents;
+        if ($rounded < $price) {
+            $rounded = floor($price) + 1 + $cents;
+        }
+
+        return $rounded;
+    }
+
+
+    public function pushToShofy(Request $request, BdpShofyDirectPusher $pusher)
+    {
+        $ids = array_filter((array) $request->input('products', []));
+        if (empty($ids)) {
+            return back()->with('error', 'Please select at least one product to sync.');
+        }
+
+        $options = [
+            'sync_status' => $request->input('sync_status', config('balenco-data-pilot.sync_default_status', 'draft')),
+            'copy_variation_images' => $request->boolean('copy_variation_images', true),
+            'include_parent_images' => $request->boolean('include_parent_images', false),
+        ];
+
+        $result = $pusher->push($ids, $options);
+        $message = "Synced {$result['products']} products and {$result['variations']} variations to Balenco.";
+
+        if (!empty($result['errors'])) {
+            return back()->with('error', $message . ' Errors: ' . implode(' | ', $result['errors']));
+        }
+
+        return back()->with('success', $message);
+    }
+    public function exportBulkOptimizationCsv(Request $request)
+    {
+        $selectedIds = collect((array) $request->input('products', []))
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->unique()
+            ->values();
+
+        $filenamePrefix = $selectedIds->isNotEmpty()
+            ? 'data-pilot-selected-seo-content-'
+            : 'data-pilot-bulk-seo-content-';
+
+        $filename = $filenamePrefix . now()->format('Y-m-d-His') . '.csv';
+
+        $headers = [
+            'row_type',
+            'product_id',
+            'sku',
+            'product_title',
+            'slug',
+            'short_description',
+            'long_description',
+            'tags',
+            'meta_title',
+            'meta_description',
+            'focus_keyword',
+        ];
+
+        return response()->streamDownload(function () use ($headers, $selectedIds) {
+            $out = fopen('php://output', 'w');
+            // UTF-8 BOM helps Excel read special characters like curly apostrophes.
+            fwrite($out, "\xEF\xBB\xBF");
+            fputcsv($out, $headers);
+
+            $query = BdpProduct::query()->orderBy('id');
+            
+        if (($seoStatus ?? 'all') === 'optimized') {
+            $query->whereNotNull('seo_optimized_at');
+        } elseif (($seoStatus ?? 'all') === 'not_optimized') {
+            $query->whereNull('seo_optimized_at');
+        }
+if ($selectedIds->isNotEmpty()) {
+                $query->whereIn('id', $selectedIds->all());
+            }
+
+            $query->chunk(100, function ($products) use ($out) {
+                foreach ($products as $product) {
+                    fputcsv($out, [
+                        'product',
+                        $product->id,
+                        $product->sku,
+                        $product->name,
+                        $product->slug,
+                        $product->short_description,
+                        $product->content,
+                        $product->tags,
+                        $product->seo_title,
+                        $product->seo_description,
+                        $product->focus_keyword,
+                    ]);
+                }
+            });
+
+            fclose($out);
+        }, $filename, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+        ]);
+    }
+    /**
+     * Import optimized SEO/content CSV back into Data Pilot products.
+     * Matching is by product_id first, with SKU safety validation. If product_id is empty, SKU is used as fallback.
+     * This method only updates content/SEO fields when update_products=1 is submitted.
+     */
+    public function importBulkOptimizationCsv(Request $request)
+    {
+        $request->validate([
+            'csv_file' => ['required', 'file', 'mimes:csv,txt'],
+            'update_products' => ['accepted'],
+        ]);
+
+        $file = $request->file('csv_file');
+        if (!$file || !$file->isValid()) {
+            return back()->with('error', 'Please upload a valid optimized SEO CSV file.');
+        }
+
+        $handle = fopen($file->getRealPath(), 'r');
+        if (!$handle) {
+            return back()->with('error', 'Unable to read the uploaded CSV file.');
+        }
+
+        $header = fgetcsv($handle);
+        if (!$header) {
+            fclose($handle);
+            return back()->with('error', 'CSV file is empty or invalid.');
+        }
+
+        // Remove UTF-8 BOM from first column if Excel added it.
+        $header[0] = preg_replace('/^\xEF\xBB\xBF/', '', (string) $header[0]);
+        $header = array_map(static fn ($v) => trim((string) $v), $header);
+        $map = array_flip($header);
+
+        $required = [
+            'row_type',
+            'product_id',
+            'sku',
+            'product_title',
+            'slug',
+            'short_description',
+            'long_description',
+            'tags',
+            'meta_title',
+            'meta_description',
+            'focus_keyword',
+        ];
+
+        $missing = array_values(array_diff($required, $header));
+        if ($missing) {
+            fclose($handle);
+            return back()->with('error', 'Missing required CSV columns: ' . implode(', ', $missing));
+        }
+
+        $updated = 0;
+        $skipped = 0;
+        $errors = [];
+        $line = 1;
+
+        while (($row = fgetcsv($handle)) !== false) {
+            $line++;
+
+            if (count(array_filter($row, fn ($value) => trim((string) $value) !== '')) === 0) {
+                continue;
+            }
+
+            if (count($row) < count($header)) {
+                $row = array_pad($row, count($header), '');
+            }
+
+            try {
+                $rowType = trim((string) ($row[$map['row_type']] ?? ''));
+                if ($rowType !== 'product') {
+                    $skipped++;
+                    continue;
+                }
+
+                $productId = (int) trim((string) ($row[$map['product_id']] ?? ''));
+                $csvSku = trim((string) ($row[$map['sku']] ?? ''));
+
+                // Primary matching: product_id.
+                // This allows SKU itself to be changed from the CSV.
+                if ($productId > 0) {
+                    $product = BdpProduct::query()->where('id', $productId)->first();
+
+                    if (!$product) {
+                        $skipped++;
+                        $errors[] = "Line {$line}: product_id {$productId} not found.";
+                        continue;
+                    }
+                } else {
+                    // Fallback only when product_id is missing.
+                    // In fallback mode, SKU is used only to find the product.
+                    if ($csvSku === '') {
+                        $skipped++;
+                        $errors[] = "Line {$line}: missing product_id and sku.";
+                        continue;
+                    }
+
+                    $product = BdpProduct::query()->where('sku', $csvSku)->first();
+
+                    if (!$product) {
+                        $skipped++;
+                        $errors[] = "Line {$line}: SKU {$csvSku} not found.";
+                        continue;
+                    }
+                }
+
+                $data = [
+                    'sku' => $csvSku,
+                    'name' => trim((string) ($row[$map['product_title']] ?? '')),
+                    'slug' => trim((string) ($row[$map['slug']] ?? '')),
+                    'short_description' => trim((string) ($row[$map['short_description']] ?? '')),
+                    'content' => trim((string) ($row[$map['long_description']] ?? '')),
+                    'tags' => trim((string) ($row[$map['tags']] ?? '')),
+                    'seo_title' => trim((string) ($row[$map['meta_title']] ?? '')),
+                    'seo_description' => trim((string) ($row[$map['meta_description']] ?? '')),
+                    'focus_keyword' => trim((string) ($row[$map['focus_keyword']] ?? '')),
+                    'seo_optimized_at' => now(),
+                    'seo_optimized_batch' => 'seo-csv-' . now()->format('Ymd-His'),
+                ];
+
+                // Prevent accidental blank overwrites.
+                foreach ($data as $key => $value) {
+                    if ($value === '') {
+                        unset($data[$key]);
+                    }
+                }
+
+                if (!$data) {
+                    $skipped++;
+                    continue;
+                }
+
+                $product->fill($data);
+                $product->save();
+
+                $updated++;
+            } catch (\Throwable $e) {
+                $skipped++;
+                $errors[] = "Line {$line}: " . $e->getMessage();
+            }
+        }
+
+        fclose($handle);
+
+        $message = "SEO CSV import completed. Updated {$updated} product(s). Skipped {$skipped} row(s). Matching used product_id first; SKU can now be updated from CSV.";
+        if ($errors) {
+            $message .= ' First issues: ' . implode(' | ', array_slice($errors, 0, 5));
+        }
+
+        return redirect()->route('bdp.import')->with($errors ? 'warning' : 'success', $message);
+    }
+
+    private function bdpUpdateEnvValues(array $values): void
+    {
+        $envPath = base_path('.env');
+        $env = file_exists($envPath) ? file_get_contents($envPath) : '';
+
+        foreach ($values as $key => $value) {
+            $line = $key . '=' . $value;
+            if (preg_match('/^' . preg_quote($key, '/') . '=.*/m', $env)) {
+                $env = preg_replace('/^' . preg_quote($key, '/') . '=.*/m', $line, $env);
+            } else {
+                $env .= PHP_EOL . $line;
+            }
+        }
+
+        file_put_contents($envPath, trim($env) . PHP_EOL);
+    }
+
+
+    public function archiveProducts(\Illuminate\Http\Request $request)
+    {
+        $ids = array_filter((array) $request->input('products', []));
+        if (empty($ids)) {
+            return back()->with('error', 'Please select at least one product.');
+        }
+
+        if (! \Illuminate\Support\Facades\Schema::hasColumn('bdp_products', 'disabled_at')) {
+            return back()->with('error', 'disabled_at column is missing. Run migrations first.');
+        }
+
+        \Illuminate\Support\Facades\DB::table('bdp_products')->whereIn('id', $ids)->update([
+            'disabled_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        return back()->with('success', count($ids) . ' product(s) disabled.');
+    }
+
+    public function restoreProducts(\Illuminate\Http\Request $request)
+    {
+        $ids = array_filter((array) $request->input('products', []));
+        if (empty($ids)) {
+            return back()->with('error', 'Please select at least one product.');
+        }
+
+        if (! \Illuminate\Support\Facades\Schema::hasColumn('bdp_products', 'disabled_at')) {
+            return back()->with('error', 'disabled_at column is missing. Run migrations first.');
+        }
+
+        \Illuminate\Support\Facades\DB::table('bdp_products')->whereIn('id', $ids)->update([
+            'disabled_at' => null,
+            'updated_at' => now(),
+        ]);
+
+        return back()->with('success', count($ids) . ' product(s) restored.');
+    }
+
+    public function assignProductLabel(\Illuminate\Http\Request $request)
+    {
+        $ids = array_filter((array) $request->input('products', []));
+        if (empty($ids)) {
+            return back()->with('error', 'Please select at least one product.');
+        }
+
+        $labelId = $request->input('label_id');
+        $seoStatus = $request->input('seo_status', 'all');
+        $newLabelName = trim((string) $request->input('new_label_name'));
+
+        if ($newLabelName !== '') {
+            $slug = \Illuminate\Support\Str::slug($newLabelName);
+            $base = $slug ?: 'label';
+            $i = 2;
+            while (\Illuminate\Support\Facades\DB::table('bdp_labels')->where('slug', $slug)->exists()) {
+                $slug = $base . '-' . $i++;
+            }
+            $labelId = \Illuminate\Support\Facades\DB::table('bdp_labels')->insertGetId([
+                'name' => $newLabelName,
+                'slug' => $slug,
+                'color' => 'blue',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
+
+        if (! $labelId) {
+            return back()->with('error', 'Create or select a label first.');
+        }
+
+        foreach ($ids as $productId) {
+            \Illuminate\Support\Facades\DB::table('bdp_label_product')->updateOrInsert(
+                ['label_id' => $labelId, 'product_id' => $productId],
+                ['updated_at' => now(), 'created_at' => now()]
+            );
+        }
+
+        return back()->with('success', 'Label assigned to ' . count($ids) . ' product(s).');
+    }
+
+    public function removeProductLabel(\Illuminate\Http\Request $request)
+    {
+        $ids = array_filter((array) $request->input('products', []));
+        $labelId = $request->input('label_id');
+
+        if (empty($ids) || ! $labelId) {
+            return back()->with('error', 'Please select products and a label to remove.');
+        }
+
+        \Illuminate\Support\Facades\DB::table('bdp_label_product')
+            ->where('label_id', $labelId)
+            ->whereIn('product_id', $ids)
+            ->delete();
+
+        return back()->with('success', 'Label removed from selected product(s).');
+    }
+
+
+    /**
+     * Download only parent/featured + gallery images for manual Balenco upload.
+     * This intentionally excludes variation/size/color image rows.
+     * If featured/gallery fields are empty, it tries to recover parent gallery images
+     * from the stored CJ/raw JSON payload, but still skips variation-like arrays.
+     */
+    public function downloadProductImagesZip($product)
+    {
+        $defined = get_defined_vars();
+        $product = null;
+
+        foreach ($defined as $value) {
+            if ($value instanceof \App\Models\BdpProduct) {
+                $product = $value;
+                break;
+            }
+        }
+
+        if (!$product) {
+            foreach ($defined as $value) {
+                if (is_numeric($value)) {
+                    $product = \App\Models\BdpProduct::find((int) $value);
+                    if ($product) {
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (!$product) {
+            $id = request()->route('product') ?: request()->route('id') ?: request('product_id') ?: request('id');
+            $product = \App\Models\BdpProduct::findOrFail((int) $id);
+        }
+
+        $product->loadMissing('variations');
+
+        $originalSku = $this->bdpSafeOriginalSkuForImageZip((string) ($product->sku ?: $product->id));
+        $publicSku = $this->bdpPublicSkuForImageFilename((string) ($product->sku ?: $product->id));
+        $titleSlug = $this->bdpWomenProductTitleSlugForImage((string) ($product->name ?: 'product-image'));
+
+        $baseName = trim($titleSlug . '-balenco-footwear-' . $publicSku, '-');
+        $zipName = $originalSku . '.zip';
+        $folder = $this->bdpSafeOriginalSkuForImageZip((string) $originalSku); // kept for reference; ZIP entries are root files to avoid double folders on extraction
+
+        $urls = [];
+        $featuredUrl = $this->bdpFirstImageUrlFromProduct($product, ['featured_image', 'image', 'thumbnail', 'product_image', 'main_image']);
+
+        if ($featuredUrl !== '') {
+            $urls[] = ['type' => 'featured', 'url' => $featuredUrl, 'number' => null];
+        }
+
+        $galleryUrls = $this->bdpImageUrlsFromProduct($product, ['gallery_images', 'images', 'product_images', 'gallery', 'media']);
+        $seen = [];
+        if ($featuredUrl !== '') {
+            $seen[$featuredUrl] = true;
+        }
+
+        $galleryNumber = 1;
+        foreach ($galleryUrls as $url) {
+            if ($url === '' || isset($seen[$url])) {
+                continue;
+            }
+
+            $seen[$url] = true;
+            $urls[] = ['type' => 'gallery', 'url' => $url, 'number' => $galleryNumber];
+            $galleryNumber++;
+        }
+
+        if (empty($urls)) {
+            return back()->with('error', 'No product images found for ZIP download.');
+        }
+
+        $tmp = tempnam(sys_get_temp_dir(), 'bdp-images-');
+        if ($tmp === false) {
+            return back()->with('error', 'Could not create temporary ZIP file.');
+        }
+
+        $zipPath = $tmp . '.zip';
+        @rename($tmp, $zipPath);
+
+        $zip = new \ZipArchive();
+        if ($zip->open($zipPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE) !== true) {
+            return back()->with('error', 'Could not create image ZIP file.');
+        }
+
+        $downloaded = 0;
+
+        foreach ($urls as $item) {
+            $url = $item['url'];
+            $content = $this->bdpDownloadRemoteImageForZip($url);
+
+            if ($content === null || $content === '') {
+                continue;
+            }
+
+            $extension = $this->bdpImageExtensionFromUrlOrContent($url, $content);
+
+            if ($item['type'] === 'featured') {
+                $filename = $baseName . '-featured.' . $extension;
+            } else {
+                $filename = $baseName . '-gallery-' . str_pad((string) $item['number'], 2, '0', STR_PAD_LEFT) . '.' . $extension;
+            }
+
+            $zip->addFromString($this->bdpZipSafeImageFilename($filename), $content);
+            $downloaded++;
+        }
+
+        $zip->close();
+
+        if ($downloaded === 0) {
+            @unlink($zipPath);
+            return back()->with('error', 'Images were found, but none could be downloaded.');
+        }
+
+        return response()->download($zipPath, $zipName)->deleteFileAfterSend(true);
+    }
+
+    private function bdpSafeOriginalSkuForImageZip(string $sku): string
+    {
+        $sku = trim($sku);
+        $sku = preg_replace('/[^A-Za-z0-9\-_]+/', '-', $sku);
+        $sku = trim((string) $sku, '-_');
+
+        return $sku !== '' ? $sku : 'product-images';
+    }
+
+    private function bdpPublicSkuForImageFilename(string $sku): string
+    {
+        $sku = strtoupper(trim($sku));
+
+        if (preg_match('/^CJ[A-Z]*0*([0-9]+)/i', $sku, $match)) {
+            return 'b' . $match[1];
+        }
+
+        if (preg_match('/([0-9]{4,})/', $sku, $match)) {
+            return 'b' . ltrim($match[1], '0');
+        }
+
+        $safe = strtolower(preg_replace('/[^A-Za-z0-9]+/', '-', $sku));
+        $safe = trim((string) $safe, '-');
+
+        return $safe !== '' ? $safe : 'b-product';
+    }
+
+    private function bdpWomenProductTitleSlugForImage(string $title): string
+    {
+        $title = html_entity_decode(strip_tags($title), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $slug = \Illuminate\Support\Str::slug($title);
+        $slug = preg_replace('/-for-women\b/', '', $slug);
+        $slug = preg_replace('/\bwomen-s\b/', 'womens', $slug);
+        $slug = trim((string) $slug, '-');
+
+        if ($slug === '') {
+            $slug = 'womens-footwear';
+        }
+
+        if (!preg_match('/^(womens|women)-/', $slug)) {
+            $slug = 'womens-' . $slug;
+        }
+
+        return $slug;
+    }
+
+    private function bdpFirstImageUrlFromProduct(\App\Models\BdpProduct $product, array $fields): string
+    {
+        $urls = $this->bdpImageUrlsFromProduct($product, $fields);
+
+        return $urls[0] ?? '';
+    }
+
+    private function bdpImageUrlsFromProduct(\App\Models\BdpProduct $product, array $fields): array
+    {
+        $urls = [];
+
+        foreach ($fields as $field) {
+            if (!isset($product->{$field}) || $product->{$field} === null || $product->{$field} === '') {
+                continue;
+            }
+
+            $urls = array_merge($urls, $this->bdpExtractImageUrls($product->{$field}));
+        }
+
+        return array_values(array_unique(array_filter($urls)));
+    }
+
+    private function bdpExtractImageUrls($value): array
+    {
+        if (is_array($value)) {
+            $out = [];
+            foreach ($value as $item) {
+                $out = array_merge($out, $this->bdpExtractImageUrls($item));
+            }
+            return $out;
+        }
+
+        $value = trim((string) $value);
+        if ($value === '') {
+            return [];
+        }
+
+        $decoded = json_decode($value, true);
+        if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+            return $this->bdpExtractImageUrls($decoded);
+        }
+
+        $urls = [];
+
+        if (preg_match_all('/https?:\/\/[^\s"\'<>]+/i', $value, $matches)) {
+            $urls = array_merge($urls, $matches[0]);
+        }
+
+        if (preg_match_all('/(?:src|href)=["\']([^"\']+)["\']/i', $value, $matches)) {
+            $urls = array_merge($urls, $matches[1]);
+        }
+
+        foreach (preg_split('/[|,\n\r]+/', $value) as $part) {
+            $part = trim($part);
+            if (preg_match('/^https?:\/\//i', $part)) {
+                $urls[] = $part;
+            }
+        }
+
+        return array_values(array_unique(array_map(function ($url) {
+            return html_entity_decode(trim((string) $url), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        }, $urls)));
+    }
+
+    private function bdpDownloadRemoteImageForZip(string $url): ?string
+    {
+        try {
+            $response = \Illuminate\Support\Facades\Http::timeout(25)
+                ->retry(1, 300)
+                ->withHeaders([
+                    'User-Agent' => 'Mozilla/5.0 DataPilotImageDownloader/1.0',
+                ])
+                ->get($url);
+
+            if (!$response->successful()) {
+                return null;
+            }
+
+            $body = $response->body();
+
+            return $body !== '' ? $body : null;
+        } catch (\Throwable $e) {
+            return null;
+        }
+    }
+
+    private function bdpImageExtensionFromUrlOrContent(string $url, string $content): string
+    {
+        $path = parse_url($url, PHP_URL_PATH) ?: '';
+        $extension = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+
+        if (in_array($extension, ['jpg', 'jpeg', 'png', 'webp', 'gif'], true)) {
+            return $extension === 'jpeg' ? 'jpg' : $extension;
+        }
+
+        $signature = substr($content, 0, 12);
+
+        if (str_starts_with($signature, "\xFF\xD8")) {
+            return 'jpg';
+        }
+
+        if (str_starts_with($signature, "\x89PNG")) {
+            return 'png';
+        }
+
+        if (str_starts_with($signature, 'RIFF') && substr($signature, 8, 4) === 'WEBP') {
+            return 'webp';
+        }
+
+        if (str_starts_with($signature, 'GIF')) {
+            return 'gif';
+        }
+
+        return 'jpg';
+    }
+
+
+
+
+    public function enqueueSyncQueue(\Illuminate\Http\Request $request)
+    {
+        $data = $request->validate([
+            'products' => ['required', 'array'],
+            'products.*' => ['integer'],
+        ]);
+
+        $ids = array_values(array_unique(array_map('intval', $data['products'] ?? [])));
+
+        if (!$ids) {
+            return back()->with('error', 'Please select at least one product to add to sync queue.');
+        }
+
+        $existingIds = \App\Models\BdpProduct::query()
+            ->whereIn('id', $ids)
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        if (!$existingIds) {
+            return back()->with('error', 'No valid products were found for sync queue.');
+        }
+
+        $added = 0;
+        $reactivated = 0;
+        $alreadyQueued = 0;
+
+        foreach ($existingIds as $productId) {
+            $existing = \Illuminate\Support\Facades\DB::table('bdp_product_sync_queue')
+                ->where('product_id', $productId)
+                ->first();
+
+            if (!$existing) {
+                \Illuminate\Support\Facades\DB::table('bdp_product_sync_queue')->insert([
+                    'product_id' => $productId,
+                    'status' => 'queued',
+                    'attempts' => 0,
+                    'last_error' => null,
+                    'queued_at' => now(),
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+                $added++;
+                continue;
+            }
+
+            if (in_array($existing->status, ['synced', 'failed'], true)) {
+                \Illuminate\Support\Facades\DB::table('bdp_product_sync_queue')
+                    ->where('id', $existing->id)
+                    ->update([
+                        'status' => 'queued',
+                        'last_error' => null,
+                        'queued_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+                $reactivated++;
+                continue;
+            }
+
+            $alreadyQueued++;
+        }
+
+        return back()->with('success', "Sync queue updated. Added {$added}, requeued {$reactivated}, already queued/processing {$alreadyQueued}.");
+    }
+
+    public function syncQueue(\Illuminate\Http\Request $request)
+    {
+        if (!\Illuminate\Support\Facades\Schema::hasTable('bdp_product_sync_queue')) {
+            return redirect()->route('bdp.products')->with('error', 'Sync queue table is missing. Run php artisan migrate first.');
+        }
+
+        $status = $request->input('status', 'all');
+        $search = trim((string) $request->input('search', ''));
+
+        $base = \Illuminate\Support\Facades\DB::table('bdp_product_sync_queue as q')
+            ->leftJoin('bdp_products as p', 'p.id', '=', 'q.product_id');
+
+        $counts = [
+            'all' => (clone $base)->count(),
+            'queued' => (clone $base)->where('q.status', 'queued')->count(),
+            'processing' => (clone $base)->where('q.status', 'processing')->count(),
+            'synced' => (clone $base)->where('q.status', 'synced')->count(),
+            'failed' => (clone $base)->where('q.status', 'failed')->count(),
+        ];
+
+        $query = \Illuminate\Support\Facades\DB::table('bdp_product_sync_queue as q')
+            ->leftJoin('bdp_products as p', 'p.id', '=', 'q.product_id')
+            ->select([
+                'q.id',
+                'q.product_id',
+                'q.status',
+                'q.attempts',
+                'q.last_error',
+                'q.queued_at',
+                'q.started_at',
+                'q.synced_at',
+                'q.created_at',
+                'q.updated_at',
+                'p.name as product_name',
+                'p.sku',
+                'p.shofy_product_id',
+                'p.balenco_sync_status',
+                'p.shofy_push_note',
+            ]);
+
+        if (in_array($status, ['queued', 'processing', 'synced', 'failed'], true)) {
+            $query->where('q.status', $status);
+        }
+
+        if ($search !== '') {
+            $query->where(function ($q) use ($search) {
+                $q->where('p.name', 'like', '%' . $search . '%')
+                    ->orWhere('p.sku', 'like', '%' . $search . '%')
+                    ->orWhere('q.product_id', $search);
+            });
+        }
+
+        $items = $query
+            // CASE works with both MySQL (SiteGround) and SQLite (CI).
+            ->orderByRaw("CASE q.status WHEN 'processing' THEN 1 WHEN 'queued' THEN 2 WHEN 'failed' THEN 3 WHEN 'synced' THEN 4 ELSE 5 END")
+            ->orderByDesc('q.updated_at')
+            ->paginate(in_array((int) $request->input('per_page', 25), [10, 25, 50, 100], true) ? (int) $request->input('per_page', 25) : 25)
+            ->withQueryString();
+
+        return view('balenco-data-pilot.sync-queue', compact('items', 'counts', 'status', 'search'));
+    }
+
+    private function bdpZipSafeImageFilename(string $filename): string
+    {
+        $filename = str_replace(['\\', '/'], '-', $filename);
+        $filename = basename($filename);
+        $filename = preg_replace('/[^A-Za-z0-9\.\-_]+/', '-', $filename);
+        $filename = preg_replace('/-+/', '-', (string) $filename);
+        $filename = trim((string) $filename, '-_.');
+
+        return $filename !== '' ? $filename : 'product-image.jpg';
+    }
+
+}
+ . number_format($margin, 2),
+            'Minimum Selling Price' => '
+
+        return view('balenco-data-pilot.dashboard', compact(
+            'stats',
+            'recentProducts',
+            'recentLogs',
+            'mappedCategories',
+            'pendingCategories',
+            'pricingSummary'
+        ));
+    }
+
+    public function products(Request $request)
+    {
+        $sync = $request->query('sync', 'all');
+        $search = trim((string) $request->query('q', ''));
+        $status = $request->query('status', 'all');
+        $category = trim((string) $request->query('category', ''));
+        $perPage = (int) $request->query('per_page', 25);
+        $perPage = in_array($perPage, [10, 25, 50, 100], true) ? $perPage : 25;
+
+        $query = BdpProduct::withCount('variations')
+            ->withMin('variations as min_variation_price', 'price')
+            ->withMin('variations as min_variation_cost', 'cost_per_item')
+            ->withSum('variations as variations_total_quantity', 'quantity')
+            ->latest();
+
+        if ($search !== '') {
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                  ->orWhere('sku', 'like', "%{$search}%")
+                  ->orWhere('categories', 'like', "%{$search}%");
+            });
+        }
+
+        if ($status !== 'all' && $status !== '') {
+            $query->where('status', $status);
+        }
+
+        if ($category !== '') {
+            $query->where('categories', 'like', "%{$category}%");
+        }
+
+        if ($sync === 'synced') {
+            $query->whereNotNull('shofy_product_id');
+        } elseif ($sync === 'not_synced') {
+            $query->whereNull('shofy_product_id');
+        } elseif ($sync === 'failed') {
+            $query->where('balenco_sync_status', 'sync_failed');
+        } elseif ($sync === 'needs_review') {
+            $query->where(function ($q) {
+                $q->whereNull('sku')
+                  ->orWhere('sku', '')
+                  ->orWhereNull('price')
+                  ->orWhereDoesntHave('variations');
+            });
+        }
+
+
+        $labelId = request('label_id');
+        if ($labelId && \Illuminate\Support\Facades\Schema::hasTable('bdp_label_product')) {
+            $query->whereExists(function ($sub) use ($labelId) {
+                $sub->select(\Illuminate\Support\Facades\DB::raw(1))
+                    ->from('bdp_label_product')
+                    ->whereColumn('bdp_label_product.product_id', 'bdp_products.id')
+                    ->where('bdp_label_product.label_id', $labelId);
+            });
+        }
+
+        $disabled = request('disabled', 'active');
+        if (\Illuminate\Support\Facades\Schema::hasColumn('bdp_products', 'disabled_at')) {
+            if ($disabled === 'disabled') {
+                $query->whereNotNull('disabled_at');
+            } elseif ($disabled !== 'all') {
+                $query->whereNull('disabled_at');
+            }
+        }
+
+        $products = $query->paginate($perPage)->withQueryString();
+        $counts = $this->dashboardStats();
+
+                $seoStatus = $request->input('seo_status', 'all');
+return view('balenco-data-pilot.products', compact(
+            'products',
+            'sync',
+            'counts',
+            'search',
+            'status',
+            'category',
+            'perPage'
+        , 'seoStatus'));
+    }
+
+    protected function dashboardStats(): array
+    {
+        $needsReview = BdpProduct::where(function ($q) {
+            $q->whereNull('sku')
+              ->orWhere('sku', '')
+              ->orWhereNull('price')
+              ->orWhereDoesntHave('variations');
+        })->count();
+
+        return [
+            'all' => BdpProduct::count(),
+            'synced' => BdpProduct::whereNotNull('shofy_product_id')->count(),
+            'not_synced' => BdpProduct::whereNull('shofy_product_id')->count(),
+            'failed' => BdpProduct::where('balenco_sync_status', 'sync_failed')->count(),
+            'needs_review' => $needsReview,
+            'variations' => BdpProductVariation::count(),
+            'low_stock' => BdpProductVariation::whereNotNull('quantity')->where('quantity', '<=', 5)->count(),
+            'draft' => BdpProduct::where('status', 'draft')->count(),
+            'published' => BdpProduct::where('status', 'published')->count(),
+        ];
+    }
+
+
+    public function categoryMapping(BdpShofyCategoryService $categoryService)
+    {
+        try {
+            $sourceCategories = $categoryService->sourceCategories();
+            $balencoCategories = $categoryService->balencoCategories();
+            $mappings = BdpCategoryMapping::query()->get()->keyBy(fn ($item) => mb_strtolower($item->source_category));
+
+            return view('balenco-data-pilot.category-mapping', compact('sourceCategories', 'balencoCategories', 'mappings'));
+        } catch (\Throwable $e) {
+            return redirect()->route('bdp.index')->with('error', 'Category mapping error: ' . $e->getMessage());
+        }
+    }
+
+    public function saveCategoryMapping(Request $request)
+    {
+        $data = $request->validate([
+            'mappings' => ['nullable', 'array'],
+            'category_names' => ['nullable', 'array'],
+        ]);
+
+        $saved = 0;
+        foreach (($data['mappings'] ?? []) as $sourceCategory => $balencoCategoryId) {
+            $sourceCategory = trim((string) $sourceCategory);
+            if ($sourceCategory === '') {
+                continue;
+            }
+
+            $balencoCategoryId = $balencoCategoryId !== '' ? (int) $balencoCategoryId : null;
+            $balencoCategoryName = null;
+
+            if ($balencoCategoryId) {
+                $balencoCategoryName = $data['category_names'][$balencoCategoryId] ?? null;
+            }
+
+            BdpCategoryMapping::updateOrCreate(
+                ['source_category' => $sourceCategory],
+                [
+                    'balenco_category_id' => $balencoCategoryId,
+                    'balenco_category_name' => $balencoCategoryName,
+                ]
+            );
+            $saved++;
+        }
+
+        return redirect()->route('bdp.categories.mapping')->with('success', "Saved {$saved} category mappings.");
+    }
+
+    public function bulkAssignCategory(Request $request)
+    {
+        $data = $request->validate([
+            'products' => ['required', 'array'],
+            'products.*' => ['integer'],
+            'category' => ['required', 'string', 'max:255'],
+            'mode' => ['nullable', Rule::in(['replace', 'append'])],
+        ]);
+
+        $products = BdpProduct::whereIn('id', $data['products'])->get();
+        $updated = 0;
+        foreach ($products as $product) {
+            $product->categories = ($data['mode'] ?? 'replace') === 'append'
+                ? $this->mergeCommaValues($product->categories, $data['category'])
+                : $data['category'];
+            $product->save();
+            $updated++;
+        }
+
+        return back()->with('success', "Assigned category to {$updated} products.");
+    }
+
+    public function importForm()
+    {
+        return view('balenco-data-pilot.import');
+    }
+
+    public function import(Request $request, BdpWooCsvImporter $wooImporter, BdpCjaImporter $cjaImporter)
+    {
+        $data = $request->validate([
+            'source' => ['required', Rule::in(['woocommerce', 'cja'])],
+            'file' => ['required', 'file', 'mimes:csv,txt,xlsx,xlsm'],
+        ]);
+
+        $importer = $data['source'] === 'cja' ? $cjaImporter : $wooImporter;
+        $result = $importer->import($request->file('file'));
+
+        $sourceLabel = $data['source'] === 'cja' ? 'CJA' : 'WooCommerce';
+
+        return redirect()->route('bdp.index')->with('success', "Imported {$result['products']} {$sourceLabel} products and {$result['variations']} variations.");
+    }
+
+    public function edit(BdpProduct $product)
+    {
+        $product->load('variations');
+        return view('balenco-data-pilot.edit', compact('product'));
+    }
+
+    public function update(Request $request, BdpProduct $product)
+    {
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'slug' => ['nullable', 'string', 'max:255'],
+            'sku' => ['nullable', 'string', 'max:255'],
+            'short_description' => ['nullable', 'string'],
+            'content' => ['nullable', 'string'],
+            'price' => ['nullable', 'numeric'],
+            'sale_price' => ['nullable', 'numeric'],
+            'categories' => ['nullable', 'string'],
+            'tags' => ['nullable', 'string'],
+            'seo_title' => ['nullable', 'string', 'max:255'],
+            'seo_description' => ['nullable', 'string'],
+            'focus_keyword' => ['nullable', 'string', 'max:255'],
+            'featured_image' => ['nullable', 'string'],
+            'gallery_images' => ['nullable', 'string'],
+        ]);
+
+        $data['slug'] = $data['slug'] ?: Str::slug($data['name']);
+        $product->update($data);
+
+        foreach ($request->input('variations', []) as $id => $variationData) {
+            BdpProductVariation::where('bdp_product_id', $product->id)->where('id', $id)->update([
+                'color' => $variationData['color'] ?? null,
+                'size_raw' => $variationData['size_raw'] ?? null,
+                'size_us' => $variationData['size_us'] ?? null,
+                'price' => $variationData['price'] ?? null,
+                'sale_price' => $variationData['sale_price'] ?? null,
+                'quantity' => $variationData['quantity'] ?? null,
+                'stock_status' => $variationData['stock_status'] ?? 'in_stock',
+                'image' => $variationData['image'] ?? null,
+                'is_default' => !empty($variationData['is_default']),
+            ]);
+        }
+
+        return back()->with('success', 'Product updated.');
+    }
+
+
+    public function bulkEdit(Request $request)
+    {
+        $ids = array_filter((array) $request->input('products', []));
+        if (empty($ids)) {
+            return back()->with('error', 'Please select at least one product for bulk edit.');
+        }
+
+        $products = BdpProduct::whereIn('id', $ids)
+            ->withCount('variations')
+            ->orderBy('name')
+            ->get();
+
+        return view('balenco-data-pilot.bulk-edit', compact('products', 'ids'));
+    }
+
+    public function bulkUpdate(Request $request)
+    {
+        $data = $request->validate([
+            'products' => ['required', 'array'],
+            'products.*' => ['integer'],
+            'category_action' => ['nullable', Rule::in(['ignore', 'replace', 'append'])],
+            'categories' => ['nullable', 'string'],
+            'tags_action' => ['nullable', Rule::in(['ignore', 'replace', 'append'])],
+            'tags' => ['nullable', 'string'],
+            'focus_keyword_action' => ['nullable', Rule::in(['ignore', 'replace'])],
+            'focus_keyword' => ['nullable', 'string', 'max:255'],
+            'seo_title_template' => ['nullable', 'string', 'max:255'],
+            'seo_description_template' => ['nullable', 'string'],
+            'short_description_template' => ['nullable', 'string'],
+            'content_prefix_template' => ['nullable', 'string'],
+            'content_suffix_template' => ['nullable', 'string'],
+        ]);
+
+        $ids = array_filter((array) ($data['products'] ?? []));
+        $products = BdpProduct::whereIn('id', $ids)->get();
+        $updated = 0;
+
+        foreach ($products as $product) {
+            $update = [];
+            $tokens = $this->bulkTemplateTokens($product);
+
+            if (!empty($data['seo_title_template'])) {
+                $update['seo_title'] = Str::limit($this->applyBulkTemplate($data['seo_title_template'], $tokens), 255, '');
+            }
+
+            if (!empty($data['seo_description_template'])) {
+                $update['seo_description'] = $this->applyBulkTemplate($data['seo_description_template'], $tokens);
+            }
+
+            if (!empty($data['short_description_template'])) {
+                $update['short_description'] = $this->applyBulkTemplate($data['short_description_template'], $tokens);
+            }
+
+            if (!empty($data['content_prefix_template'])) {
+                $prefix = $this->applyBulkTemplate($data['content_prefix_template'], $tokens);
+                $update['content'] = $prefix . "\n" . (string) $product->content;
+            }
+
+            if (!empty($data['content_suffix_template'])) {
+                $suffix = $this->applyBulkTemplate($data['content_suffix_template'], $tokens);
+                $update['content'] = (array_key_exists('content', $update) ? $update['content'] : (string) $product->content) . "\n" . $suffix;
+            }
+
+            $categoryAction = $data['category_action'] ?? 'ignore';
+            if ($categoryAction !== 'ignore' && !empty($data['categories'])) {
+                $update['categories'] = $categoryAction === 'append'
+                    ? $this->mergeCommaValues($product->categories, $data['categories'])
+                    : $data['categories'];
+            }
+
+            $tagsAction = $data['tags_action'] ?? 'ignore';
+            if ($tagsAction !== 'ignore' && !empty($data['tags'])) {
+                $update['tags'] = $tagsAction === 'append'
+                    ? $this->mergeCommaValues($product->tags, $data['tags'])
+                    : $data['tags'];
+            }
+
+            $focusAction = $data['focus_keyword_action'] ?? 'ignore';
+            if ($focusAction === 'replace' && !empty($data['focus_keyword'])) {
+                $update['focus_keyword'] = $data['focus_keyword'];
+            }
+
+            if (!empty($update)) {
+                $product->update($update);
+                $updated++;
+            }
+        }
+
+        return redirect()->route('bdp.index')->with('success', "Bulk updated {$updated} products.");
+    }
+
+    protected function bulkTemplateTokens(BdpProduct $product): array
+    {
+        return [
+            'product_name' => (string) $product->name,
+            'name' => (string) $product->name,
+            'sku' => (string) $product->sku,
+            'category' => (string) $product->categories,
+            'categories' => (string) $product->categories,
+            'price' => $product->price !== null ? number_format((float) $product->price, 2) : '',
+            'brand' => 'Balenco',
+            'store' => 'Balenco',
+        ];
+    }
+
+    protected function applyBulkTemplate(string $template, array $tokens): string
+    {
+        foreach ($tokens as $key => $value) {
+            $template = str_replace(['{' . $key . '}', '{{' . $key . '}}'], $value, $template);
+        }
+
+        return trim($template);
+    }
+
+    protected function mergeCommaValues(?string $existing, string $new): string
+    {
+        $items = [];
+        foreach (explode(',', (string) $existing . ',' . $new) as $item) {
+            $item = trim($item);
+            if ($item !== '') {
+                $items[mb_strtolower($item)] = $item;
+            }
+        }
+
+        return implode(', ', array_values($items));
+    }
+
+
+    public function cjSettings(BdpCjApiService $cj)
+    {
+        $token = $cj->token();
+        return view('balenco-data-pilot.cj-settings', compact('token'));
+    }
+
+    public function saveCjSettings(Request $request, BdpCjApiService $cj)
+    {
+        $data = $request->validate([
+            'api_key' => ['required', 'string', 'max:255'],
+        ]);
+
+        $cj->saveApiKey($data['api_key']);
+
+        return redirect()->route('bdp.cj.settings')->with('success', 'CJ API key saved. Now click Get Access Token.');
+    }
+
+    public function getCjToken(BdpCjApiService $cj)
+    {
+        try {
+            $cj->getAccessToken();
+            return redirect()->route('bdp.cj.settings')->with('success', 'CJ access token received successfully.');
+        } catch (\Throwable $e) {
+            return redirect()->route('bdp.cj.settings')->with('error', 'CJ token error: ' . $e->getMessage());
+        }
+    }
+
+    public function refreshCjToken(BdpCjApiService $cj)
+    {
+        try {
+            $cj->refreshAccessToken();
+            return redirect()->route('bdp.cj.settings')->with('success', 'CJ access token refreshed successfully.');
+        } catch (\Throwable $e) {
+            return redirect()->route('bdp.cj.settings')->with('error', 'CJ refresh error: ' . $e->getMessage());
+        }
+    }
+
+    public function testCjConnection(BdpCjApiService $cj)
+    {
+        try {
+            $cj->testConnection();
+            return redirect()->route('bdp.cj.settings')->with('success', 'CJ connection test successful.');
+        } catch (\Throwable $e) {
+            return redirect()->route('bdp.cj.settings')->with('error', 'CJ connection test failed: ' . $e->getMessage());
+        }
+    }
+
+    public function cjImportForm(Request $request, BdpCjApiService $cj)
+    {
+        $results = null;
+        $keyword = (string) $request->query('keyword', '');
+        if ($request->filled('keyword')) {
+            try {
+                $results = $cj->searchProducts([
+                    'keyword' => $keyword,
+                    'page' => (int) $request->query('page', 1),
+                    'size' => (int) $request->query('size', 20),
+                    'country_code' => $request->query('country_code'),
+                    'min_price' => $request->query('min_price'),
+                    'max_price' => $request->query('max_price'),
+                ]);
+            } catch (\Throwable $e) {
+                return redirect()->route('bdp.cj.import')->with('error', 'CJ search failed: ' . $e->getMessage());
+            }
+        }
+
+        return view('balenco-data-pilot.cj-import', compact('results', 'keyword'));
+    }
+
+    public function importFromCj(Request $request, BdpCjApiService $cj)
+    {
+        $data = $request->validate([
+            'pid' => ['nullable', 'string', 'max:255'],
+            'product_sku' => ['nullable', 'string', 'max:255'],
+            'variant_sku' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        if (empty($data['pid']) && empty($data['product_sku']) && empty($data['variant_sku'])) {
+            return back()->with('error', 'Please provide a CJ product ID, product SKU, or variant SKU.');
+        }
+
+        try {
+            $product = $cj->importProduct($data['pid'] ?? null, $data['product_sku'] ?? null, $data['variant_sku'] ?? null);
+            return redirect()->route('bdp.products.edit', $product)->with('success', 'Imported CJ product into Data Pilot. Review it before syncing to Balenco.');
+        } catch (\Throwable $e) {
+            return back()->with('error', 'CJ import failed: ' . $e->getMessage());
+        }
+    }
+
+
+
+    public function importMultipleFromCj(Request $request, BdpCjApiService $cj)
+    {
+        $data = $request->validate([
+            'items' => ['required', 'array', 'min:1'],
+            'items.*' => ['required', 'string'],
+        ]);
+
+        $imported = 0;
+        $failed = 0;
+        $errors = [];
+
+        foreach ($data['items'] as $encodedItem) {
+            $decoded = json_decode(base64_decode((string) $encodedItem, true) ?: '', true);
+
+            if (! is_array($decoded)) {
+                $failed++;
+                $errors[] = 'Invalid selected product payload.';
+                continue;
+            }
+
+            $pid = trim((string) ($decoded['pid'] ?? ''));
+            $productSku = trim((string) ($decoded['product_sku'] ?? ''));
+
+            if ($pid === '' && $productSku === '') {
+                $failed++;
+                $errors[] = 'Selected product is missing PID and SKU.';
+                continue;
+            }
+
+            try {
+                $cj->importProduct($pid ?: null, $productSku ?: null, null);
+                $imported++;
+            } catch (\Throwable $e) {
+                $failed++;
+                $label = $productSku ?: $pid ?: 'Unknown product';
+                $errors[] = $label . ': ' . $e->getMessage();
+            }
+        }
+
+        $message = "Bulk CJ import complete: {$imported} imported";
+        if ($failed > 0) {
+            $message .= " and {$failed} failed";
+        }
+
+        if (! empty($errors)) {
+            $message .= '. ' . implode(' | ', array_slice($errors, 0, 3));
+        }
+
+        return redirect()->route('bdp.products')->with($imported > 0 ? 'success' : 'error', $message . '.');
+    }
+
+
+
+    public function fetchCjReviews(Request $request, BdpProduct $product, BdpCjApiService $cj)
+    {
+        $data = $request->validate([
+            'max_reviews' => ['nullable', 'integer', 'min:1', 'max:12'],
+        ]);
+
+        $pid = trim((string) ($product->source_id ?: $product->source_product_id ?: ''));
+        if (! $pid) {
+            return back()->with('error', 'CJ product PID/source ID is missing. Cannot fetch reviews.');
+        }
+
+        $maxReviews = min((int) ($data['max_reviews'] ?? 12), 12);
+        $scores = [5, 4];
+        $saved = 0;
+        $seen = [];
+        $remaining = $maxReviews;
+
+        foreach ($scores as $score) {
+            if ($remaining <= 0) {
+                break;
+            }
+
+            try {
+                $response = $cj->productReviews($pid, $score, 1, $remaining);
+            } catch (\Throwable $e) {
+                if ($score === 5 && $saved === 0) {
+                    return back()->with('error', 'CJ reviews fetch failed: ' . $e->getMessage());
+                }
+                continue;
+            }
+
+            $reviews = data_get($response, 'data.list', []);
+            if (! is_array($reviews)) {
+                $reviews = [];
+            }
+
+            foreach ($reviews as $review) {
+                if (! is_array($review)) {
+                    continue;
+                }
+
+                $commentId = (string) ($review['commentId'] ?? '');
+                if ($commentId === '' || isset($seen[$commentId])) {
+                    continue;
+                }
+                $seen[$commentId] = true;
+
+                $comment = trim((string) ($review['comment'] ?? ''));
+                if ($comment === '') {
+                    continue;
+                }
+
+                $reviewDate = null;
+                if (! empty($review['commentDate'])) {
+                    $ts = strtotime((string) $review['commentDate']);
+                    $reviewDate = $ts ? date('Y-m-d H:i:s', $ts) : null;
+                }
+
+                BdpProductReview::updateOrCreate(
+                    ['source' => 'cj', 'source_review_id' => $commentId],
+                    [
+                        'bdp_product_id' => $product->id,
+                        'source_product_id' => (string) ($review['pid'] ?? $pid),
+                        'score' => (int) ($review['score'] ?? $score),
+                        'reviewer_name' => (string) ($review['commentUser'] ?? ''),
+                        'review_text' => $comment,
+                        'review_date' => $reviewDate,
+                        'country_code' => (string) ($review['countryCode'] ?? ''),
+                        'flag_icon_url' => (string) ($review['flagIconUrl'] ?? ''),
+                        'review_images' => array_values(array_filter((array) ($review['commentUrls'] ?? []))),
+                        'is_approved' => false,
+                        'is_pushed' => false,
+                        'raw_json' => $review,
+                    ]
+                );
+
+                $saved++;
+                $remaining = $maxReviews - $saved;
+                if ($remaining <= 0) {
+                    break;
+                }
+            }
+        }
+
+        return back()->with('success', "Fetched {$saved} CJ reviews. Only 5-star and 4-star reviews were imported, max {$maxReviews}.");
+    }
+
+    public function refreshCjInventoryShipping(Request $request, BdpProduct $product, BdpCjApiService $cj)
+    {
+        $data = $request->validate([
+            'country_code' => ['nullable', 'string', 'max:10'],
+            'quantity' => ['nullable', 'integer', 'min:1', 'max:100'],
+        ]);
+
+        try {
+            $product->load('variations');
+            $country = strtoupper($data['country_code'] ?? env('BDP_CJ_DEFAULT_SHIPPING_COUNTRY', 'US'));
+            $quantity = (int) ($data['quantity'] ?? 1);
+            $result = $cj->refreshInventoryAndShipping($product, $country ?: 'US', $quantity ?: 1);
+
+            $message = "CJ refresh complete: {$result['inventory']} inventory rows updated and {$result['shipping']} product-level shipping estimate saved.";
+            if (!empty($result['errors'])) {
+                $message .= ' Some rows had errors: ' . implode(' | ', array_slice($result['errors'], 0, 3));
+            }
+
+            return redirect()->route('bdp.products.edit', $product)->with('success', $message);
+        } catch (\Throwable $e) {
+            return redirect()->route('bdp.products.edit', $product)->with('error', 'CJ inventory/shipping refresh failed: ' . $e->getMessage());
+        }
+    }
+
+    public function apiLogs(Request $request)
+    {
+        $logs = BdpApiLog::query()
+            ->when($request->filled('status'), fn ($q) => $q->where('status_code', (int) $request->query('status')))
+            ->when($request->filled('endpoint'), fn ($q) => $q->where('endpoint', 'like', '%' . $request->query('endpoint') . '%'))
+            ->latest('id')
+            ->paginate(50)
+            ->withQueryString();
+
+        return view('balenco-data-pilot.api-logs', compact('logs'));
+    }
+
+    public function clearApiLogs()
+    {
+        BdpApiLog::query()->delete();
+
+        return redirect()->route('bdp.api.logs')->with('success', 'API logs cleared.');
+    }
+
+
+    public function bulkPricing(Request $request, BdpCjApiService $cj)
+    {
+        $data = $request->validate([
+            'products' => ['required', 'array'],
+            'products.*' => ['integer'],
+            'country_code' => ['nullable', 'string', 'max:10'],
+            'quantity' => ['nullable', 'integer', 'min:1', 'max:100'],
+            'margin_type' => ['required', Rule::in(['fixed', 'percent'])],
+            'margin_value' => ['required', 'numeric', 'min:0', 'max:10000'],
+            'round_mode' => ['nullable', Rule::in(['none', '99', '95', '00'])],
+            'minimum_price' => ['nullable', 'numeric', 'min:0', 'max:10000'],
+            'refresh_shipping' => ['nullable', 'boolean'],
+        ]);
+
+        $products = BdpProduct::with('variations')->whereIn('id', $data['products'])->get();
+        if ($products->isEmpty()) {
+            return back()->with('error', 'No selected products were found.');
+        }
+
+        $country = strtoupper($data['country_code'] ?: env('BDP_CJ_DEFAULT_SHIPPING_COUNTRY', 'US'));
+        $quantity = (int) ($data['quantity'] ?? 1);
+        $marginType = $data['margin_type'];
+        $marginValue = (float) $data['margin_value'];
+        $roundMode = $data['round_mode'] ?? '99';
+        $minimumPrice = $data['minimum_price'] !== null && $data['minimum_price'] !== '' ? (float) $data['minimum_price'] : null;
+        $refreshShipping = (bool) ($data['refresh_shipping'] ?? false);
+
+        $updated = 0;
+        $refreshed = 0;
+        $errors = [];
+
+        foreach ($products as $index => $product) {
+            try {
+                /**
+                 * Shipping refresh is now optional only.
+                 * Cron is responsible for refreshing cj_shipping_fee and landed_cost.
+                 * Bulk Price Update normally applies margin to existing landed cost.
+                 */
+                if ($refreshShipping) {
+                    $result = $cj->refreshInventoryAndShipping($product, $country ?: 'US', $quantity ?: 1);
+                    $refreshed++;
+
+                    if (!empty($result['errors'])) {
+                        $errors[] = $product->name . ': ' . implode(' | ', array_slice($result['errors'], 0, 2));
+                    }
+
+                    // CJA logistics has strict QPS limits, so keep manual bulk refresh gentle.
+                    if ($products->count() > 1 && $index < $products->count() - 1) {
+                        sleep(1);
+                    }
+                }
+
+                $product->refresh();
+                $product->load('variations');
+
+                $shippingFee = $product->cj_shipping_fee;
+
+                $finalPrices = [];
+                foreach ($product->variations as $variation) {
+                    $variationLanded = $variation->landed_cost;
+
+                    if ($variationLanded === null || $variationLanded === '') {
+                        $cjCost = $variation->cost_per_item;
+                        if ($cjCost === null || $cjCost === '') {
+                            $cjCost = $variation->price ?: $product->cost_per_item ?: $product->price;
+                        }
+
+                        if (($shippingFee === null || $shippingFee === '') && !$refreshShipping) {
+                            $errors[] = $product->name . ': shipping/landed cost is missing. Wait for cron or select refresh CJA shipping before bulk price update.';
+                            continue 2;
+                        }
+
+                        if ($cjCost === null || $cjCost === '') {
+                            continue;
+                        }
+
+                        $variationLanded = round((float) $cjCost + (float) $shippingFee, 2);
+
+                        $variation->forceFill([
+                            'cost_per_item' => round((float) $cjCost, 2),
+                            'cj_shipping_fee' => $shippingFee !== null && $shippingFee !== '' ? (float) $shippingFee : null,
+                            'landed_cost' => $variationLanded,
+                        ])->save();
+                    }
+
+                    $selling = $this->calculateSellingPrice((float) $variationLanded, $marginType, $marginValue, $roundMode, $minimumPrice);
+
+                    $variation->forceFill([
+                        'price' => $selling,
+                        'sale_price' => null,
+                    ])->save();
+
+                    $finalPrices[] = $selling;
+                }
+
+                if (empty($finalPrices)) {
+                    $errors[] = $product->name . ': no variation landed costs were available for pricing.';
+                    continue;
+                }
+
+                $productLanded = $product->landed_cost;
+                if ($productLanded === null || $productLanded === '') {
+                    $baseCost = $product->variations()->whereNotNull('cost_per_item')->min('cost_per_item') ?: $product->cost_per_item ?: $product->price;
+
+                    if (($shippingFee === null || $shippingFee === '') && !$refreshShipping) {
+                        $errors[] = $product->name . ': product landed cost is missing. Wait for cron or select refresh CJA shipping before bulk price update.';
+                        continue;
+                    }
+
+                    $productLanded = $baseCost !== null ? round((float) $baseCost + (float) $shippingFee, 2) : null;
+                }
+
+                $product->forceFill([
+                    'landed_cost' => $productLanded,
+                    'price' => min($finalPrices),
+                    'sale_price' => null,
+                    'balenco_sync_status' => $product->shofy_product_id ? $product->balenco_sync_status : 'not_synced',
+                    'balenco_sync_message' => sprintf(
+                        'Bulk price updated from landed cost + %s margin %s, rounded %s%s.',
+                        $marginType === 'fixed' ? '$' : '',
+                        rtrim(rtrim(number_format($marginValue, 2), '0'), '.'),
+                        $roundMode,
+                        $refreshShipping ? ' after CJA shipping refresh' : ''
+                    ),
+                ])->save();
+
+                $updated++;
+            } catch (\Throwable $e) {
+                $errors[] = $product->name . ': ' . $e->getMessage();
+            }
+        }
+
+        $message = "Bulk price update completed for {$updated} products" . ($refreshed ? " and refreshed CJA shipping for {$refreshed} products" : '') . '.';
+        if (!empty($errors)) {
+            $message .= ' Notes: ' . implode(' | ', array_slice($errors, 0, 5));
+        }
+
+        return back()->with(empty($errors) ? 'success' : 'error', $message);
+    }
+
+    protected function calculateSellingPrice(float $landedCost, string $marginType, float $marginValue, string $roundMode = '99', ?float $minimumPrice = null): float
+    {
+        $price = $marginType === 'percent'
+            ? $landedCost * (1 + ($marginValue / 100))
+            : $landedCost + $marginValue;
+
+        if ($minimumPrice !== null) {
+            $price = max($price, $minimumPrice);
+        }
+
+        return round($this->roundRetailPrice($price, $roundMode), 2);
+    }
+
+    protected function roundRetailPrice(float $price, string $roundMode): float
+    {
+        if ($roundMode === 'none') {
+            return $price;
+        }
+
+        if ($roundMode === '00') {
+            return ceil($price);
+        }
+
+        $cents = $roundMode === '95' ? 0.95 : 0.99;
+        $rounded = floor($price) + $cents;
+        if ($rounded < $price) {
+            $rounded = floor($price) + 1 + $cents;
+        }
+
+        return $rounded;
+    }
+
+
+    public function pushToShofy(Request $request, BdpShofyDirectPusher $pusher)
+    {
+        $ids = array_filter((array) $request->input('products', []));
+        if (empty($ids)) {
+            return back()->with('error', 'Please select at least one product to sync.');
+        }
+
+        $options = [
+            'sync_status' => $request->input('sync_status', config('balenco-data-pilot.sync_default_status', 'draft')),
+            'copy_variation_images' => $request->boolean('copy_variation_images', true),
+            'include_parent_images' => $request->boolean('include_parent_images', false),
+        ];
+
+        $result = $pusher->push($ids, $options);
+        $message = "Synced {$result['products']} products and {$result['variations']} variations to Balenco.";
+
+        if (!empty($result['errors'])) {
+            return back()->with('error', $message . ' Errors: ' . implode(' | ', $result['errors']));
+        }
+
+        return back()->with('success', $message);
+    }
+    public function exportBulkOptimizationCsv(Request $request)
+    {
+        $selectedIds = collect((array) $request->input('products', []))
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->unique()
+            ->values();
+
+        $filenamePrefix = $selectedIds->isNotEmpty()
+            ? 'data-pilot-selected-seo-content-'
+            : 'data-pilot-bulk-seo-content-';
+
+        $filename = $filenamePrefix . now()->format('Y-m-d-His') . '.csv';
+
+        $headers = [
+            'row_type',
+            'product_id',
+            'sku',
+            'product_title',
+            'slug',
+            'short_description',
+            'long_description',
+            'tags',
+            'meta_title',
+            'meta_description',
+            'focus_keyword',
+        ];
+
+        return response()->streamDownload(function () use ($headers, $selectedIds) {
+            $out = fopen('php://output', 'w');
+            // UTF-8 BOM helps Excel read special characters like curly apostrophes.
+            fwrite($out, "\xEF\xBB\xBF");
+            fputcsv($out, $headers);
+
+            $query = BdpProduct::query()->orderBy('id');
+            
+        if (($seoStatus ?? 'all') === 'optimized') {
+            $query->whereNotNull('seo_optimized_at');
+        } elseif (($seoStatus ?? 'all') === 'not_optimized') {
+            $query->whereNull('seo_optimized_at');
+        }
+if ($selectedIds->isNotEmpty()) {
+                $query->whereIn('id', $selectedIds->all());
+            }
+
+            $query->chunk(100, function ($products) use ($out) {
+                foreach ($products as $product) {
+                    fputcsv($out, [
+                        'product',
+                        $product->id,
+                        $product->sku,
+                        $product->name,
+                        $product->slug,
+                        $product->short_description,
+                        $product->content,
+                        $product->tags,
+                        $product->seo_title,
+                        $product->seo_description,
+                        $product->focus_keyword,
+                    ]);
+                }
+            });
+
+            fclose($out);
+        }, $filename, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+        ]);
+    }
+    /**
+     * Import optimized SEO/content CSV back into Data Pilot products.
+     * Matching is by product_id first, with SKU safety validation. If product_id is empty, SKU is used as fallback.
+     * This method only updates content/SEO fields when update_products=1 is submitted.
+     */
+    public function importBulkOptimizationCsv(Request $request)
+    {
+        $request->validate([
+            'csv_file' => ['required', 'file', 'mimes:csv,txt'],
+            'update_products' => ['accepted'],
+        ]);
+
+        $file = $request->file('csv_file');
+        if (!$file || !$file->isValid()) {
+            return back()->with('error', 'Please upload a valid optimized SEO CSV file.');
+        }
+
+        $handle = fopen($file->getRealPath(), 'r');
+        if (!$handle) {
+            return back()->with('error', 'Unable to read the uploaded CSV file.');
+        }
+
+        $header = fgetcsv($handle);
+        if (!$header) {
+            fclose($handle);
+            return back()->with('error', 'CSV file is empty or invalid.');
+        }
+
+        // Remove UTF-8 BOM from first column if Excel added it.
+        $header[0] = preg_replace('/^\xEF\xBB\xBF/', '', (string) $header[0]);
+        $header = array_map(static fn ($v) => trim((string) $v), $header);
+        $map = array_flip($header);
+
+        $required = [
+            'row_type',
+            'product_id',
+            'sku',
+            'product_title',
+            'slug',
+            'short_description',
+            'long_description',
+            'tags',
+            'meta_title',
+            'meta_description',
+            'focus_keyword',
+        ];
+
+        $missing = array_values(array_diff($required, $header));
+        if ($missing) {
+            fclose($handle);
+            return back()->with('error', 'Missing required CSV columns: ' . implode(', ', $missing));
+        }
+
+        $updated = 0;
+        $skipped = 0;
+        $errors = [];
+        $line = 1;
+
+        while (($row = fgetcsv($handle)) !== false) {
+            $line++;
+
+            if (count(array_filter($row, fn ($value) => trim((string) $value) !== '')) === 0) {
+                continue;
+            }
+
+            if (count($row) < count($header)) {
+                $row = array_pad($row, count($header), '');
+            }
+
+            try {
+                $rowType = trim((string) ($row[$map['row_type']] ?? ''));
+                if ($rowType !== 'product') {
+                    $skipped++;
+                    continue;
+                }
+
+                $productId = (int) trim((string) ($row[$map['product_id']] ?? ''));
+                $csvSku = trim((string) ($row[$map['sku']] ?? ''));
+
+                // Primary matching: product_id.
+                // This allows SKU itself to be changed from the CSV.
+                if ($productId > 0) {
+                    $product = BdpProduct::query()->where('id', $productId)->first();
+
+                    if (!$product) {
+                        $skipped++;
+                        $errors[] = "Line {$line}: product_id {$productId} not found.";
+                        continue;
+                    }
+                } else {
+                    // Fallback only when product_id is missing.
+                    // In fallback mode, SKU is used only to find the product.
+                    if ($csvSku === '') {
+                        $skipped++;
+                        $errors[] = "Line {$line}: missing product_id and sku.";
+                        continue;
+                    }
+
+                    $product = BdpProduct::query()->where('sku', $csvSku)->first();
+
+                    if (!$product) {
+                        $skipped++;
+                        $errors[] = "Line {$line}: SKU {$csvSku} not found.";
+                        continue;
+                    }
+                }
+
+                $data = [
+                    'sku' => $csvSku,
+                    'name' => trim((string) ($row[$map['product_title']] ?? '')),
+                    'slug' => trim((string) ($row[$map['slug']] ?? '')),
+                    'short_description' => trim((string) ($row[$map['short_description']] ?? '')),
+                    'content' => trim((string) ($row[$map['long_description']] ?? '')),
+                    'tags' => trim((string) ($row[$map['tags']] ?? '')),
+                    'seo_title' => trim((string) ($row[$map['meta_title']] ?? '')),
+                    'seo_description' => trim((string) ($row[$map['meta_description']] ?? '')),
+                    'focus_keyword' => trim((string) ($row[$map['focus_keyword']] ?? '')),
+                    'seo_optimized_at' => now(),
+                    'seo_optimized_batch' => 'seo-csv-' . now()->format('Ymd-His'),
+                ];
+
+                // Prevent accidental blank overwrites.
+                foreach ($data as $key => $value) {
+                    if ($value === '') {
+                        unset($data[$key]);
+                    }
+                }
+
+                if (!$data) {
+                    $skipped++;
+                    continue;
+                }
+
+                $product->fill($data);
+                $product->save();
+
+                $updated++;
+            } catch (\Throwable $e) {
+                $skipped++;
+                $errors[] = "Line {$line}: " . $e->getMessage();
+            }
+        }
+
+        fclose($handle);
+
+        $message = "SEO CSV import completed. Updated {$updated} product(s). Skipped {$skipped} row(s). Matching used product_id first; SKU can now be updated from CSV.";
+        if ($errors) {
+            $message .= ' First issues: ' . implode(' | ', array_slice($errors, 0, 5));
+        }
+
+        return redirect()->route('bdp.import')->with($errors ? 'warning' : 'success', $message);
+    }
+
+    private function bdpUpdateEnvValues(array $values): void
+    {
+        $envPath = base_path('.env');
+        $env = file_exists($envPath) ? file_get_contents($envPath) : '';
+
+        foreach ($values as $key => $value) {
+            $line = $key . '=' . $value;
+            if (preg_match('/^' . preg_quote($key, '/') . '=.*/m', $env)) {
+                $env = preg_replace('/^' . preg_quote($key, '/') . '=.*/m', $line, $env);
+            } else {
+                $env .= PHP_EOL . $line;
+            }
+        }
+
+        file_put_contents($envPath, trim($env) . PHP_EOL);
+    }
+
+
+    public function archiveProducts(\Illuminate\Http\Request $request)
+    {
+        $ids = array_filter((array) $request->input('products', []));
+        if (empty($ids)) {
+            return back()->with('error', 'Please select at least one product.');
+        }
+
+        if (! \Illuminate\Support\Facades\Schema::hasColumn('bdp_products', 'disabled_at')) {
+            return back()->with('error', 'disabled_at column is missing. Run migrations first.');
+        }
+
+        \Illuminate\Support\Facades\DB::table('bdp_products')->whereIn('id', $ids)->update([
+            'disabled_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        return back()->with('success', count($ids) . ' product(s) disabled.');
+    }
+
+    public function restoreProducts(\Illuminate\Http\Request $request)
+    {
+        $ids = array_filter((array) $request->input('products', []));
+        if (empty($ids)) {
+            return back()->with('error', 'Please select at least one product.');
+        }
+
+        if (! \Illuminate\Support\Facades\Schema::hasColumn('bdp_products', 'disabled_at')) {
+            return back()->with('error', 'disabled_at column is missing. Run migrations first.');
+        }
+
+        \Illuminate\Support\Facades\DB::table('bdp_products')->whereIn('id', $ids)->update([
+            'disabled_at' => null,
+            'updated_at' => now(),
+        ]);
+
+        return back()->with('success', count($ids) . ' product(s) restored.');
+    }
+
+    public function assignProductLabel(\Illuminate\Http\Request $request)
+    {
+        $ids = array_filter((array) $request->input('products', []));
+        if (empty($ids)) {
+            return back()->with('error', 'Please select at least one product.');
+        }
+
+        $labelId = $request->input('label_id');
+        $seoStatus = $request->input('seo_status', 'all');
+        $newLabelName = trim((string) $request->input('new_label_name'));
+
+        if ($newLabelName !== '') {
+            $slug = \Illuminate\Support\Str::slug($newLabelName);
+            $base = $slug ?: 'label';
+            $i = 2;
+            while (\Illuminate\Support\Facades\DB::table('bdp_labels')->where('slug', $slug)->exists()) {
+                $slug = $base . '-' . $i++;
+            }
+            $labelId = \Illuminate\Support\Facades\DB::table('bdp_labels')->insertGetId([
+                'name' => $newLabelName,
+                'slug' => $slug,
+                'color' => 'blue',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
+
+        if (! $labelId) {
+            return back()->with('error', 'Create or select a label first.');
+        }
+
+        foreach ($ids as $productId) {
+            \Illuminate\Support\Facades\DB::table('bdp_label_product')->updateOrInsert(
+                ['label_id' => $labelId, 'product_id' => $productId],
+                ['updated_at' => now(), 'created_at' => now()]
+            );
+        }
+
+        return back()->with('success', 'Label assigned to ' . count($ids) . ' product(s).');
+    }
+
+    public function removeProductLabel(\Illuminate\Http\Request $request)
+    {
+        $ids = array_filter((array) $request->input('products', []));
+        $labelId = $request->input('label_id');
+
+        if (empty($ids) || ! $labelId) {
+            return back()->with('error', 'Please select products and a label to remove.');
+        }
+
+        \Illuminate\Support\Facades\DB::table('bdp_label_product')
+            ->where('label_id', $labelId)
+            ->whereIn('product_id', $ids)
+            ->delete();
+
+        return back()->with('success', 'Label removed from selected product(s).');
+    }
+
+
+    /**
+     * Download only parent/featured + gallery images for manual Balenco upload.
+     * This intentionally excludes variation/size/color image rows.
+     * If featured/gallery fields are empty, it tries to recover parent gallery images
+     * from the stored CJ/raw JSON payload, but still skips variation-like arrays.
+     */
+    public function downloadProductImagesZip($product)
+    {
+        $defined = get_defined_vars();
+        $product = null;
+
+        foreach ($defined as $value) {
+            if ($value instanceof \App\Models\BdpProduct) {
+                $product = $value;
+                break;
+            }
+        }
+
+        if (!$product) {
+            foreach ($defined as $value) {
+                if (is_numeric($value)) {
+                    $product = \App\Models\BdpProduct::find((int) $value);
+                    if ($product) {
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (!$product) {
+            $id = request()->route('product') ?: request()->route('id') ?: request('product_id') ?: request('id');
+            $product = \App\Models\BdpProduct::findOrFail((int) $id);
+        }
+
+        $product->loadMissing('variations');
+
+        $originalSku = $this->bdpSafeOriginalSkuForImageZip((string) ($product->sku ?: $product->id));
+        $publicSku = $this->bdpPublicSkuForImageFilename((string) ($product->sku ?: $product->id));
+        $titleSlug = $this->bdpWomenProductTitleSlugForImage((string) ($product->name ?: 'product-image'));
+
+        $baseName = trim($titleSlug . '-balenco-footwear-' . $publicSku, '-');
+        $zipName = $originalSku . '.zip';
+        $folder = $this->bdpSafeOriginalSkuForImageZip((string) $originalSku); // kept for reference; ZIP entries are root files to avoid double folders on extraction
+
+        $urls = [];
+        $featuredUrl = $this->bdpFirstImageUrlFromProduct($product, ['featured_image', 'image', 'thumbnail', 'product_image', 'main_image']);
+
+        if ($featuredUrl !== '') {
+            $urls[] = ['type' => 'featured', 'url' => $featuredUrl, 'number' => null];
+        }
+
+        $galleryUrls = $this->bdpImageUrlsFromProduct($product, ['gallery_images', 'images', 'product_images', 'gallery', 'media']);
+        $seen = [];
+        if ($featuredUrl !== '') {
+            $seen[$featuredUrl] = true;
+        }
+
+        $galleryNumber = 1;
+        foreach ($galleryUrls as $url) {
+            if ($url === '' || isset($seen[$url])) {
+                continue;
+            }
+
+            $seen[$url] = true;
+            $urls[] = ['type' => 'gallery', 'url' => $url, 'number' => $galleryNumber];
+            $galleryNumber++;
+        }
+
+        if (empty($urls)) {
+            return back()->with('error', 'No product images found for ZIP download.');
+        }
+
+        $tmp = tempnam(sys_get_temp_dir(), 'bdp-images-');
+        if ($tmp === false) {
+            return back()->with('error', 'Could not create temporary ZIP file.');
+        }
+
+        $zipPath = $tmp . '.zip';
+        @rename($tmp, $zipPath);
+
+        $zip = new \ZipArchive();
+        if ($zip->open($zipPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE) !== true) {
+            return back()->with('error', 'Could not create image ZIP file.');
+        }
+
+        $downloaded = 0;
+
+        foreach ($urls as $item) {
+            $url = $item['url'];
+            $content = $this->bdpDownloadRemoteImageForZip($url);
+
+            if ($content === null || $content === '') {
+                continue;
+            }
+
+            $extension = $this->bdpImageExtensionFromUrlOrContent($url, $content);
+
+            if ($item['type'] === 'featured') {
+                $filename = $baseName . '-featured.' . $extension;
+            } else {
+                $filename = $baseName . '-gallery-' . str_pad((string) $item['number'], 2, '0', STR_PAD_LEFT) . '.' . $extension;
+            }
+
+            $zip->addFromString($this->bdpZipSafeImageFilename($filename), $content);
+            $downloaded++;
+        }
+
+        $zip->close();
+
+        if ($downloaded === 0) {
+            @unlink($zipPath);
+            return back()->with('error', 'Images were found, but none could be downloaded.');
+        }
+
+        return response()->download($zipPath, $zipName)->deleteFileAfterSend(true);
+    }
+
+    private function bdpSafeOriginalSkuForImageZip(string $sku): string
+    {
+        $sku = trim($sku);
+        $sku = preg_replace('/[^A-Za-z0-9\-_]+/', '-', $sku);
+        $sku = trim((string) $sku, '-_');
+
+        return $sku !== '' ? $sku : 'product-images';
+    }
+
+    private function bdpPublicSkuForImageFilename(string $sku): string
+    {
+        $sku = strtoupper(trim($sku));
+
+        if (preg_match('/^CJ[A-Z]*0*([0-9]+)/i', $sku, $match)) {
+            return 'b' . $match[1];
+        }
+
+        if (preg_match('/([0-9]{4,})/', $sku, $match)) {
+            return 'b' . ltrim($match[1], '0');
+        }
+
+        $safe = strtolower(preg_replace('/[^A-Za-z0-9]+/', '-', $sku));
+        $safe = trim((string) $safe, '-');
+
+        return $safe !== '' ? $safe : 'b-product';
+    }
+
+    private function bdpWomenProductTitleSlugForImage(string $title): string
+    {
+        $title = html_entity_decode(strip_tags($title), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $slug = \Illuminate\Support\Str::slug($title);
+        $slug = preg_replace('/-for-women\b/', '', $slug);
+        $slug = preg_replace('/\bwomen-s\b/', 'womens', $slug);
+        $slug = trim((string) $slug, '-');
+
+        if ($slug === '') {
+            $slug = 'womens-footwear';
+        }
+
+        if (!preg_match('/^(womens|women)-/', $slug)) {
+            $slug = 'womens-' . $slug;
+        }
+
+        return $slug;
+    }
+
+    private function bdpFirstImageUrlFromProduct(\App\Models\BdpProduct $product, array $fields): string
+    {
+        $urls = $this->bdpImageUrlsFromProduct($product, $fields);
+
+        return $urls[0] ?? '';
+    }
+
+    private function bdpImageUrlsFromProduct(\App\Models\BdpProduct $product, array $fields): array
+    {
+        $urls = [];
+
+        foreach ($fields as $field) {
+            if (!isset($product->{$field}) || $product->{$field} === null || $product->{$field} === '') {
+                continue;
+            }
+
+            $urls = array_merge($urls, $this->bdpExtractImageUrls($product->{$field}));
+        }
+
+        return array_values(array_unique(array_filter($urls)));
+    }
+
+    private function bdpExtractImageUrls($value): array
+    {
+        if (is_array($value)) {
+            $out = [];
+            foreach ($value as $item) {
+                $out = array_merge($out, $this->bdpExtractImageUrls($item));
+            }
+            return $out;
+        }
+
+        $value = trim((string) $value);
+        if ($value === '') {
+            return [];
+        }
+
+        $decoded = json_decode($value, true);
+        if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+            return $this->bdpExtractImageUrls($decoded);
+        }
+
+        $urls = [];
+
+        if (preg_match_all('/https?:\/\/[^\s"\'<>]+/i', $value, $matches)) {
+            $urls = array_merge($urls, $matches[0]);
+        }
+
+        if (preg_match_all('/(?:src|href)=["\']([^"\']+)["\']/i', $value, $matches)) {
+            $urls = array_merge($urls, $matches[1]);
+        }
+
+        foreach (preg_split('/[|,\n\r]+/', $value) as $part) {
+            $part = trim($part);
+            if (preg_match('/^https?:\/\//i', $part)) {
+                $urls[] = $part;
+            }
+        }
+
+        return array_values(array_unique(array_map(function ($url) {
+            return html_entity_decode(trim((string) $url), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        }, $urls)));
+    }
+
+    private function bdpDownloadRemoteImageForZip(string $url): ?string
+    {
+        try {
+            $response = \Illuminate\Support\Facades\Http::timeout(25)
+                ->retry(1, 300)
+                ->withHeaders([
+                    'User-Agent' => 'Mozilla/5.0 DataPilotImageDownloader/1.0',
+                ])
+                ->get($url);
+
+            if (!$response->successful()) {
+                return null;
+            }
+
+            $body = $response->body();
+
+            return $body !== '' ? $body : null;
+        } catch (\Throwable $e) {
+            return null;
+        }
+    }
+
+    private function bdpImageExtensionFromUrlOrContent(string $url, string $content): string
+    {
+        $path = parse_url($url, PHP_URL_PATH) ?: '';
+        $extension = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+
+        if (in_array($extension, ['jpg', 'jpeg', 'png', 'webp', 'gif'], true)) {
+            return $extension === 'jpeg' ? 'jpg' : $extension;
+        }
+
+        $signature = substr($content, 0, 12);
+
+        if (str_starts_with($signature, "\xFF\xD8")) {
+            return 'jpg';
+        }
+
+        if (str_starts_with($signature, "\x89PNG")) {
+            return 'png';
+        }
+
+        if (str_starts_with($signature, 'RIFF') && substr($signature, 8, 4) === 'WEBP') {
+            return 'webp';
+        }
+
+        if (str_starts_with($signature, 'GIF')) {
+            return 'gif';
+        }
+
+        return 'jpg';
+    }
+
+
+
+
+    public function enqueueSyncQueue(\Illuminate\Http\Request $request)
+    {
+        $data = $request->validate([
+            'products' => ['required', 'array'],
+            'products.*' => ['integer'],
+        ]);
+
+        $ids = array_values(array_unique(array_map('intval', $data['products'] ?? [])));
+
+        if (!$ids) {
+            return back()->with('error', 'Please select at least one product to add to sync queue.');
+        }
+
+        $existingIds = \App\Models\BdpProduct::query()
+            ->whereIn('id', $ids)
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        if (!$existingIds) {
+            return back()->with('error', 'No valid products were found for sync queue.');
+        }
+
+        $added = 0;
+        $reactivated = 0;
+        $alreadyQueued = 0;
+
+        foreach ($existingIds as $productId) {
+            $existing = \Illuminate\Support\Facades\DB::table('bdp_product_sync_queue')
+                ->where('product_id', $productId)
+                ->first();
+
+            if (!$existing) {
+                \Illuminate\Support\Facades\DB::table('bdp_product_sync_queue')->insert([
+                    'product_id' => $productId,
+                    'status' => 'queued',
+                    'attempts' => 0,
+                    'last_error' => null,
+                    'queued_at' => now(),
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+                $added++;
+                continue;
+            }
+
+            if (in_array($existing->status, ['synced', 'failed'], true)) {
+                \Illuminate\Support\Facades\DB::table('bdp_product_sync_queue')
+                    ->where('id', $existing->id)
+                    ->update([
+                        'status' => 'queued',
+                        'last_error' => null,
+                        'queued_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+                $reactivated++;
+                continue;
+            }
+
+            $alreadyQueued++;
+        }
+
+        return back()->with('success', "Sync queue updated. Added {$added}, requeued {$reactivated}, already queued/processing {$alreadyQueued}.");
+    }
+
+    public function syncQueue(\Illuminate\Http\Request $request)
+    {
+        if (!\Illuminate\Support\Facades\Schema::hasTable('bdp_product_sync_queue')) {
+            return redirect()->route('bdp.products')->with('error', 'Sync queue table is missing. Run php artisan migrate first.');
+        }
+
+        $status = $request->input('status', 'all');
+        $search = trim((string) $request->input('search', ''));
+
+        $base = \Illuminate\Support\Facades\DB::table('bdp_product_sync_queue as q')
+            ->leftJoin('bdp_products as p', 'p.id', '=', 'q.product_id');
+
+        $counts = [
+            'all' => (clone $base)->count(),
+            'queued' => (clone $base)->where('q.status', 'queued')->count(),
+            'processing' => (clone $base)->where('q.status', 'processing')->count(),
+            'synced' => (clone $base)->where('q.status', 'synced')->count(),
+            'failed' => (clone $base)->where('q.status', 'failed')->count(),
+        ];
+
+        $query = \Illuminate\Support\Facades\DB::table('bdp_product_sync_queue as q')
+            ->leftJoin('bdp_products as p', 'p.id', '=', 'q.product_id')
+            ->select([
+                'q.id',
+                'q.product_id',
+                'q.status',
+                'q.attempts',
+                'q.last_error',
+                'q.queued_at',
+                'q.started_at',
+                'q.synced_at',
+                'q.created_at',
+                'q.updated_at',
+                'p.name as product_name',
+                'p.sku',
+                'p.shofy_product_id',
+                'p.balenco_sync_status',
+                'p.shofy_push_note',
+            ]);
+
+        if (in_array($status, ['queued', 'processing', 'synced', 'failed'], true)) {
+            $query->where('q.status', $status);
+        }
+
+        if ($search !== '') {
+            $query->where(function ($q) use ($search) {
+                $q->where('p.name', 'like', '%' . $search . '%')
+                    ->orWhere('p.sku', 'like', '%' . $search . '%')
+                    ->orWhere('q.product_id', $search);
+            });
+        }
+
+        $items = $query
+            ->orderByRaw("FIELD(q.status, 'processing', 'queued', 'failed', 'synced')")
+            ->orderByDesc('q.updated_at')
+            ->paginate((int) $request->input('per_page', 25))
+            ->withQueryString();
+
+        return view('balenco-data-pilot.sync-queue', compact('items', 'counts', 'status', 'search'));
+    }
+
+    private function bdpZipSafeImageFilename(string $filename): string
+    {
+        $filename = str_replace(['\\', '/'], '-', $filename);
+        $filename = basename($filename);
+        $filename = preg_replace('/[^A-Za-z0-9\.\-_]+/', '-', $filename);
+        $filename = preg_replace('/-+/', '-', (string) $filename);
+        $filename = trim((string) $filename, '-_.');
+
+        return $filename !== '' ? $filename : 'product-image.jpg';
+    }
+
+}
+ . number_format($minimum, 2),
+            'Retail Rounding' => match ($rounding) {
+                'nearest_99' => 'Nearest .99',
+                'none' => 'No rounding',
+                default => 'Round up to .99',
+            },
         ];
 
         return view('balenco-data-pilot.dashboard', compact(
