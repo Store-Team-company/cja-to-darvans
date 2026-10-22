@@ -168,6 +168,68 @@ class SaasPortalBillingTest extends TestCase
         $this->assertFalse(app(SaasEntitlements::class)->active($workspace));
     }
 
+    public function test_workspace_owner_can_expire_pending_checkout_and_change_plan(): void
+    {
+        [$owner, $workspace] = $this->workspace();
+        $workspace->billing()->create([
+            'pending_checkout_id' => 'cs_test_pending3',
+            'pending_checkout_url' => 'https://checkout.stripe.com/c/pay/cs_test_pending3',
+            'pending_checkout_expires_at' => now()->addHours(5),
+            'status' => 'incomplete',
+        ]);
+        Http::fake(['api.stripe.com/*' => Http::response([
+            'id' => 'cs_test_pending3', 'status' => 'expired',
+        ], 200)]);
+
+        $url = route('saas.workspace.billing.cancel-checkout', $workspace->public_id);
+        $staff = User::factory()->create(['email_verified_at' => now()]);
+        $workspace->members()->attach($staff->id, ['role' => 'viewer', 'status' => 'active']);
+
+        $this->actingAs($staff)->post($url)->assertForbidden();
+        Http::assertNothingSent();
+
+        $this->actingAs($owner)->post($url)->assertRedirect()->assertSessionHas('status');
+        $bill = $workspace->billing()->firstOrFail();
+        $this->assertNull($bill->pending_checkout_id);
+        $this->assertNull($bill->pending_checkout_url);
+        $this->assertFalse(app(SaasEntitlements::class)->active($workspace));
+        Http::assertSent(fn ($request) => $request->method() === 'POST'
+            && str_contains($request->url(), 'checkout/sessions/cs_test_pending3/expire'));
+    }
+
+    public function test_signed_expired_checkout_event_only_clears_matching_pending_session(): void
+    {
+        [$owner, $workspace] = $this->workspace();
+        $workspace->billing()->create([
+            'pending_checkout_id' => 'cs_test_still_open',
+            'pending_checkout_url' => 'https://checkout.stripe.com/c/pay/cs_test_still_open',
+            'pending_checkout_expires_at' => now()->addHours(5),
+            'status' => 'incomplete',
+        ]);
+
+        foreach (['cs_test_old_checkout', 'cs_test_still_open'] as $i => $id) {
+            [$body, $signature] = $this->signedEvent([
+                'id' => 'evt_expire_'.$i,
+                'type' => 'checkout.session.expired',
+                'created' => time(),
+                'data' => ['object' => [
+                    'id' => $id, 'status' => 'expired',
+                    'client_reference_id' => $workspace->public_id,
+                    'metadata' => ['workspace_id' => $workspace->public_id],
+                ]],
+            ]);
+            $this->call('POST', '/api/saas/stripe/webhook', [], [], [], [
+                'HTTP_STRIPE_SIGNATURE' => $signature,
+            ], $body)->assertOk();
+
+            if ($i === 0) {
+                $this->assertSame('cs_test_still_open', $workspace->billing()->first()->pending_checkout_id);
+            }
+        }
+        $this->assertNull($workspace->billing()->first()->pending_checkout_id);
+        $this->assertDatabaseCount('saas_stripe_events', 2);
+    }
+
     public function test_checkout_is_disabled_without_configured_stripe_pricing(): void
     {
         [$owner, $workspace] = $this->workspace();
