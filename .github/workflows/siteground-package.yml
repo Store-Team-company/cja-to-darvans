@@ -24,6 +24,7 @@ on:
       - 'scripts/verify-ui-category-deployer.php'
       - 'scripts/deploy-siteground-saas-02.php'
       - 'scripts/deploy-siteground-auth03.php'
+      - 'scripts/build-botble-connector.php'
       - 'scripts/verify-siteground-auth03.php'
       - 'scripts/verify-siteground-saas-02.php'
       - 'docs/SAAS_CUSTOMER_PORTAL_STRIPE_02.md'
@@ -117,3 +118,25 @@ jobs:
           path: dist/data-pilot-siteground.zip
           if-no-files-found: error
           retention-days: 7
+
+
+  botble_plugin:
+    name: Package Data Pilot Botble Connector
+    needs: tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: zip, mbstring
+          coverage: none
+      - name: Build independently installable Botble plugin ZIP
+        run: php scripts/build-botble-connector.php
+      - name: Upload Botble plugin artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: datapilot-botble-connector-0.2.0
+          path: dist/datapilot-connector-0.2.0.zip
+          retention-days: 14
+          if-no-files-found: error
