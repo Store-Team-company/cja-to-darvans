@@ -6,6 +6,7 @@
 
 - Marketing landing at \`/platform\`, monthly pricing at \`/pricing\`. Existing \`/\` and legacy \`/login\` remain the private single-store admin.
 - Improved mobile-friendly customer signup, login, verified email, password reset, onboarding dashboard.
+- Verified paid workspace owners can store, rotate and revoke their own encrypted CJ API credentials, and register HTTPS Botble stores as pending verification. No real API calls or publishing are enabled yet.
 - Customer pages at \`/app/workspaces/{public_id}\`: products, connections, team, billing and settings. All are verified-user, active-workspace-member routes; customer data is scoped through the workspace relation.
 - Owner-controlled workspace name updates; team and connection management are deliberately read-only until secure pairing/invitation QA.
 - Tenant-owned Stripe subscription schema \`saas_workspace_billing\` and unique webhook event ledger \`saas_stripe_events\`, additive migrations only.
@@ -50,7 +51,26 @@ Customer account email reset/verification requires valid outgoing SMTP. Do not p
 6. Independent Stripe test mode end-to-end QA, real webhook delivery including failed-payment/delinquency and event ordering, subscription renewal/cancellation, recovery and refunds.
 7. Confirm exact website code baseline before applying incremental updates. Never run a fresh installation ZIP over a live site.
 
-## Safe deployment
+## Changes-only SSH deployment (isolated STAGING only)
+
+From a clean GitHub checkout on SiteGround:
+
+```sh
+cd ~/dev/data-pilot-src
+git fetch origin
+git switch -c feature/datapilot-saas-02-portal-stripe-billing --track origin/feature/datapilot-saas-02-portal-stripe-billing
+php scripts/deploy-siteground-saas-02.php --check --target="$HOME/www/YOUR-STAGING-DOMAIN/data-pilot-app"
+```
+
+After verifying independent staging site and MySQL backups, and only if preflight PASS:
+
+```sh
+php scripts/deploy-siteground-saas-02.php --apply --backup-confirmed --target="$HOME/www/YOUR-STAGING-DOMAIN/data-pilot-app"
+```
+
+The script checks 32 reviewed files against the previous approved release, rejects customizations, backs up replaced PHP and Blade files, and runs only the additive Stripe billing migration. It never overwrites .env, vendor, storage, public_html or legacy imported product data. Saas signup and billing flags remain OFF.
+
+## Production status
 
 Do not deploy this branch to the current live application or enable \`SAAS_BILLING_ENABLED\` until independent QA approves it. It is stacked on existing unmerged PRs; staged reconciliation is required. Keep all Stripe keys in private \`.env\` or a secret manager, never GitHub.
 
