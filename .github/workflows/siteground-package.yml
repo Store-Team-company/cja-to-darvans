@@ -25,6 +25,8 @@ on:
       - 'scripts/deploy-siteground-saas-02.php'
       - 'scripts/deploy-siteground-auth03.php'
       - 'scripts/build-botble-connector.php'
+      - 'scripts/deploy-siteground-botble03a.php'
+      - 'scripts/verify-siteground-botble03a.php'
       - 'scripts/verify-siteground-auth03.php'
       - 'scripts/verify-siteground-saas-02.php'
       - 'docs/SAAS_CUSTOMER_PORTAL_STRIPE_02.md'
@@ -93,6 +95,10 @@ jobs:
         run: |
           git switch -c feature/datapilot-auth-03-email-otp-optional-password
           php scripts/verify-siteground-auth03.php
+      - name: Verify BOTBLE-03A SaaS changes-only deployment
+        run: |
+          git switch -c feature/datapilot-botble-connector-03a-pairing-inbox
+          php scripts/verify-siteground-botble03a.php
       - name: Build and smoke-check incremental SaaS update
         run: |
           php scripts/build-siteground-saas-update.php
