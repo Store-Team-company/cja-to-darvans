@@ -423,6 +423,11 @@ return redirect()->route('bdp.settings')->with('status', 'Settings saved success
                 ?: $request->input('db_host')
                 ?: ''));
 
+            if (!self::validMysqlHost($host)) {
+                return back()->withInput($request->except(['store_db_password', 'store_api_secret']))
+                    ->with('error', 'Database host must be a MySQL hostname or IP address, not a website URL with https://. For customer stores use the Data Pilot Botble Connector.');
+            }
+
             $port = trim((string) ($request->input('store_db_port')
                 ?: $request->input('connected_store_db_port')
                 ?: $request->input('db_port')
@@ -502,7 +507,11 @@ return redirect()->route('bdp.settings')->with('status', 'Settings saved success
 
                 return back()->withInput()->with('success', 'Database connected successfully. Botble ecommerce table ec_products was detected.');
             } catch (\Throwable $e) {
-                return back()->withInput()->with('error', 'Database connection failed: ' . $e->getMessage());
+                \Illuminate\Support\Facades\Log::warning('Legacy store DB test failed', [
+                    'exception_type' => get_class($e),
+                ]);
+                return back()->withInput($request->except(['store_db_password', 'store_api_secret']))
+                    ->with('error', 'Could not connect to the MySQL database. Check the actual MySQL hostname, port, network access and credentials. Website URLs cannot be used as DB hosts.');
             }
         }
 
@@ -549,6 +558,30 @@ return redirect()->route('bdp.settings')->with('status', 'Settings saved success
      */
     public function saveConnectedStore(\Illuminate\Http\Request $request)
     {
+        // Validate every supplied field BEFORE writing any persisted settings.
+        // This legacy single-store target is separate from SaaS tenant pairing.
+        $request->validate([
+            'store_push_method' => ['required', 'in:database,api'],
+            'connected_store_enabled' => ['nullable', 'in:0,1'],
+            'connected_store_name' => ['nullable', 'string', 'max:150'],
+            'connected_store_domain' => ['nullable', 'string', 'max:255'],
+            'connected_store_api_url' => ['nullable', 'url', 'max:255'],
+            'store_db_host' => ['nullable', 'string', 'max:253', function ($attribute, $value, $fail) use ($request) {
+                if ($request->input('store_push_method') === 'database'
+                    && trim((string) $value) !== ''
+                    && !self::validMysqlHost(trim((string) $value))) {
+                    $fail('Database host must be a MySQL hostname or IP address, not https:// or a website URL.');
+                }
+            }],
+            'store_db_port' => ['nullable', 'integer', 'between:1,65535'],
+            'store_db_database' => ['nullable', 'string', 'max:150'],
+            'store_db_username' => ['nullable', 'string', 'max:150'],
+            'store_db_prefix' => ['nullable', 'string', 'max:64'],
+            'store_db_password' => ['nullable', 'string', 'max:1024'],
+            'store_api_endpoint' => ['nullable', 'url', 'max:255'],
+            'store_api_secret' => ['nullable', 'string', 'max:1024'],
+        ]);
+
         $save = function (string $key, $value): void {
             \App\Models\BdpSetting::updateOrCreate(
                 ['key' => $key],
@@ -592,5 +625,20 @@ return redirect()->route('bdp.settings')->with('status', 'Settings saved success
 
         return back()->with('success', 'Connected store configuration saved successfully.');
     }
+
+    private static function validMysqlHost(string $host): bool
+    {
+        $host = trim($host);
+        if ($host === '' || strlen($host) > 253 || str_contains($host, '/')
+            || str_contains($host, ':') || preg_match('/\\s/', $host)
+            || in_array(strtolower($host), ['http', 'https'], true)) {
+            return false;
+        }
+
+        return filter_var($host, FILTER_VALIDATE_IP) !== false
+            || strtolower($host) === 'localhost'
+            || filter_var($host, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME) !== false;
+    }
+
 
 }
