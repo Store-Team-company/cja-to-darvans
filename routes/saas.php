@@ -1,6 +1,9 @@
 <?php
 
 use App\Http\Controllers\Saas\SaasAuthController;
+use App\Http\Controllers\Saas\SaasBillingController;
+use App\Http\Controllers\Saas\SaasPublicController;
+use App\Http\Controllers\Saas\SaasPortalController;
 use App\Http\Controllers\Saas\WorkspaceDashboardController;
 use App\Http\Middleware\EnsureSaasEnabled;
 use App\Http\Middleware\EnsureSaasWorkspaceMember;
@@ -10,8 +13,16 @@ use Illuminate\Support\Facades\Route;
 
 // No public SaaS features can run unless SAAS_ENABLED is explicitly enabled.
 // Signups remain off separately until billing + independent QA have passed.
+Route::middleware([EnsureSaasEnabled::class])->group(function () {
+    Route::get('/platform', [SaasPublicController::class, 'home'])->name('saas.landing');
+    Route::get('/pricing', [SaasPublicController::class, 'pricing'])->name('saas.pricing');
+});
+
 Route::prefix('app')->middleware([EnsureSaasEnabled::class])->name('saas.')->group(function () {
     Route::get('/login', [SaasAuthController::class, 'showLogin'])->name('login');
+    Route::get('/forgot-password', [SaasAuthController::class, 'forgotForm'])->name('password.request');
+    Route::post('/forgot-password', [SaasAuthController::class, 'sendReset'])->middleware('throttle:5,1')->name('password.email');
+    Route::post('/reset-password', [SaasAuthController::class, 'resetPassword'])->middleware('throttle:5,1')->name('password.update');
     Route::post('/login', [SaasAuthController::class, 'login'])
         ->middleware('throttle:6,1')->name('login.submit');
 
@@ -30,9 +41,22 @@ Route::prefix('app')->middleware([EnsureSaasEnabled::class])->name('saas.')->gro
 
         Route::middleware('verified')->group(function () {
             Route::get('/', [SaasAuthController::class, 'home'])->name('home');
-            Route::get('/workspaces/{workspace:public_id}', [WorkspaceDashboardController::class, 'show'])
+            Route::prefix('workspaces/{workspace:public_id}')
                 ->middleware(EnsureSaasWorkspaceMember::class)
-                ->name('workspace.dashboard');
+                ->name('workspace.')->group(function () {
+                    Route::get('/', [WorkspaceDashboardController::class, 'show'])->name('dashboard');
+                    Route::get('/products', [SaasPortalController::class, 'products'])->name('products');
+                    Route::get('/connections', [SaasPortalController::class, 'connections'])->name('connections');
+                    Route::get('/team', [SaasPortalController::class, 'team'])->name('team');
+                    Route::get('/settings', [SaasPortalController::class, 'settings'])->name('settings');
+                    Route::patch('/settings', [SaasPortalController::class, 'updateSettings'])
+                        ->middleware('throttle:15,1')->name('settings.update');
+                    Route::get('/billing', [SaasBillingController::class, 'show'])->name('billing');
+                    Route::post('/billing/checkout', [SaasBillingController::class, 'checkout'])
+                        ->middleware('throttle:6,1')->name('billing.checkout');
+                    Route::post('/billing/portal', [SaasBillingController::class, 'portal'])
+                        ->middleware('throttle:6,1')->name('billing.portal');
+                });
         });
     });
 });
@@ -51,4 +75,10 @@ Route::middleware([EnsureSaasEnabled::class, 'auth'])->group(function () {
 
         return redirect()->route('saas.home');
     })->middleware(['signed', 'throttle:6,1'])->name('verification.verify');
+});
+
+Route::middleware([EnsureSaasEnabled::class, 'guest'])->group(function () {
+    // Laravel password-reset notifications require the standard name.
+    Route::get('/app/reset-password/{token}', [SaasAuthController::class, 'resetForm'])
+        ->name('password.reset');
 });
