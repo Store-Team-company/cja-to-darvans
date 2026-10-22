@@ -110,7 +110,7 @@ class BdpCustomerManagementTest extends TestCase
             'stripe_subscription_id' => 'sub_keep',
         ]);
         $this->actingAs($owner)->get(route('saas.workspace.dashboard', $workspace->public_id))
-            ->assertForbidden();
+            ->assertNotFound();
 
         $this->withSession(['bdp_logged_in' => true])->post($restore)
             ->assertRedirect(route('bdp.customers.show', $workspace->public_id));
