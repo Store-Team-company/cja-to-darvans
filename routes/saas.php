@@ -9,6 +9,7 @@ use App\Http\Controllers\Saas\SaasPortalController;
 use App\Http\Controllers\Saas\WorkspaceDashboardController;
 use App\Http\Middleware\EnsureSaasEnabled;
 use App\Http\Middleware\EnsureSaasWorkspaceMember;
+use App\Http\Middleware\EnsureSaasCustomerApproved;
 use Illuminate\Foundation\Auth\EmailVerificationRequest;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -22,11 +23,6 @@ Route::middleware([EnsureSaasEnabled::class])->group(function () {
 
 Route::prefix('app')->middleware([EnsureSaasEnabled::class])->name('saas.')->group(function () {
     Route::get('/login', [SaasAuthController::class, 'showLogin'])->name('login');
-    Route::get('/otp', [SaasAuthController::class, 'showOtp'])->name('otp.verify.form');
-    Route::post('/otp/send', [SaasAuthController::class, 'sendOtp'])
-        ->middleware('throttle:3,1')->name('otp.send');
-    Route::post('/otp/verify', [SaasAuthController::class, 'verifyOtp'])
-        ->middleware('throttle:8,1')->name('otp.verify');
     Route::get('/forgot-password', [SaasAuthController::class, 'forgotForm'])->name('password.request');
     Route::post('/forgot-password', [SaasAuthController::class, 'sendReset'])->middleware('throttle:5,1')->name('password.email');
     Route::post('/reset-password', [SaasAuthController::class, 'resetPassword'])->middleware('throttle:5,1')->name('password.update');
@@ -46,7 +42,12 @@ Route::prefix('app')->middleware([EnsureSaasEnabled::class])->name('saas.')->gro
             return back()->with('status', 'verification-link-sent');
         })->middleware('throttle:6,1')->name('verification.send');
 
-        Route::middleware('verified')->group(function () {
+        Route::get('/password/change', [SaasAuthController::class, 'changePasswordForm'])
+            ->name('password.change.form');
+        Route::post('/password/change', [SaasAuthController::class, 'changePassword'])
+            ->middleware('throttle:5,1')->name('password.change');
+
+        Route::middleware(EnsureSaasCustomerApproved::class)->group(function () {
             Route::get('/', [SaasAuthController::class, 'home'])->name('home');
             Route::prefix('workspaces/{workspace:public_id}')
                 ->middleware(EnsureSaasWorkspaceMember::class)
