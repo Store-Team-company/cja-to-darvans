@@ -18,7 +18,8 @@
         </div>
         <button class="btn btn-primary auth-submit" type="submit">Sign in with password</button>
     </form>
-    <p class="micro" style="margin-top:16px">Don't know your password? Ask the Data Pilot administrator to issue a temporary password. You'll change it after signing in.</p>
+    <p class="micro" style="margin-top:16px"><a href="{{ route('saas.password.request') }}">Forgot password?</a></p>
+    <p class="micro" style="margin-top:12px">Don't know your password? Ask the Data Pilot administrator to issue a temporary password. You'll change it after signing in.</p>
     <p class="fine-print">
         @if(config('saas.registration_enabled'))
             New to Data Pilot? <a href="{{ route('saas.register') }}" style="color:#315acc;text-decoration:underline">Create account</a>
