@@ -29,7 +29,7 @@ Route::group(['middleware' => ['web', 'core']], function (): void {
             'as' => 'datapilot.connector.incoming.approve',
             'uses' => IncomingProductsController::class . '@approve',
             'permission' => 'datapilot-connector.settings',
-        ])->middleware('throttle:10,1');
+        ])->middleware([\Illuminate\Routing\Middleware\SubstituteBindings::class, 'throttle:10,1']);
         Route::post('data-pilot/connector/revoke', [
             'as' => 'datapilot.connector.revoke',
             'uses' => SettingsController::class . '@revoke',
