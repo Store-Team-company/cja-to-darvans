@@ -24,11 +24,19 @@ class SettingsController extends Controller
 
     public function pair(Request $request): RedirectResponse
     {
-        $data = $request->validate([
+        // A pairing code is a one-time secret: validation errors must never
+        // flash this field back into the browser's session data.
+        $validator = \Illuminate\Support\Facades\Validator::make($request->all(), [
             'workspace_id' => ['required', 'uuid'],
             'store_id' => ['required', 'uuid'],
             'pairing_code' => ['required', 'regex:/^[a-f0-9]{64}$/D'],
         ]);
+        if ($validator->fails()) {
+            return back()->withErrors($validator)->withInput(
+                $request->only(['workspace_id', 'store_id'])
+            );
+        }
+        $data = $validator->validated();
         if (ConnectorPairing::query()->where('status', 'paired')->exists()) {
             return back()->withErrors(['pairing' => 'Revoke the existing pairing before connecting to a different workspace.']);
         }
