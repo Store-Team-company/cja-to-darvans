@@ -34,6 +34,7 @@ class DatapilotBotbleNativeCatalogGuardTest extends TestCase
         }
         (require $root.'/database/migrations/2026_10_22_000001_create_datapilot_connector_tables.php')->up();
         (require $root.'/database/migrations/2026_10_22_000002_create_datapilot_product_mappings.php')->up();
+        (require $root.'/database/migrations/2026_10_22_000003_add_datapilot_draft_import_history.php')->up();
         Route::post('/datapilot-native-approve/{draft}', [IncomingProductsController::class, 'approve']);
         config()->set('datapilot-connector.catalog_import_enabled', false);
     }
@@ -138,6 +139,29 @@ class DatapilotBotbleNativeCatalogGuardTest extends TestCase
         $this->expectException(RuntimeException::class);
         $this->expectExceptionMessage('Image import is not enabled');
         app(CatalogImportService::class)->approve($draft);
+    }
+
+    public function test_approved_review_failure_is_visible_and_retryable(): void
+    {
+        $draft = $this->draft();
+        config()->set('datapilot-connector.catalog_import_enabled', true);
+
+        $this->from('/datapilot-native-review')
+            ->post('/datapilot-native-approve/'.$draft->id)
+            ->assertRedirect('/datapilot-native-review')
+            ->assertSessionHasErrors('catalog');
+
+        $this->assertSame('failed', $draft->fresh()->status);
+        $this->assertSame(1, (int) $draft->fresh()->import_attempts);
+        $this->assertStringContainsString('Native Botble eCommerce model missing', $draft->fresh()->last_import_error);
+        $this->assertDatabaseCount('datapilot_connector_product_mappings', 0);
+
+        $this->from('/datapilot-native-review')
+            ->post('/datapilot-native-approve/'.$draft->id)
+            ->assertRedirect('/datapilot-native-review')
+            ->assertSessionHasErrors('catalog');
+
+        $this->assertSame(2, (int) $draft->fresh()->import_attempts);
     }
 
 }
