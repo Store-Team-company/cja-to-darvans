@@ -380,6 +380,12 @@ return redirect()->route('bdp.settings')->with('status', 'Settings saved success
      */
     public function testConnection(\Illuminate\Http\Request $request)
     {
+        // Never flash credentials to session data when redirecting after a test.
+        $safeInput = $request->except([
+            'store_db_password', 'connected_store_db_password', 'db_password',
+            'store_api_secret', 'connected_store_api_secret', 'api_secret',
+        ]);
+
         // BDP_TEST_PLACEHOLDER_PASSWORD_GUARD: use saved password when the field contains stars.
         if (in_array($request->input('store_db_password'), ['********', '••••••••'], true)) {
             try {
@@ -424,7 +430,7 @@ return redirect()->route('bdp.settings')->with('status', 'Settings saved success
                 ?: ''));
 
             if (!self::validMysqlHost($host)) {
-                return back()->withInput($request->except(['store_db_password', 'store_api_secret']))
+                return back()->withInput($safeInput)
                     ->with('error', 'Database host must be a MySQL hostname or IP address, not a website URL with https://. For customer stores use the Data Pilot Botble Connector.');
             }
 
@@ -468,7 +474,20 @@ return redirect()->route('bdp.settings')->with('status', 'Settings saved success
             }
 
             if ($host === '' || $database === '' || $username === '' || $password === '') {
-                return back()->withInput()->with('error', 'Please enter database host, database name, database username, and database password before testing the database connection.');
+                return back()->withInput($safeInput)->with('error', 'Please enter database host, database name, database username, and database password before testing the database connection.');
+            }
+
+            if (!ctype_digit($port) || (int) $port < 1 || (int) $port > 65535) {
+                return back()->withInput($safeInput)->with('error', 'Database port must be between 1 and 65535.');
+            }
+
+            // Saved credentials are encrypted; entered credentials may be plaintext.
+            if ($password !== '') {
+                try {
+                    $password = Crypt::decryptString($password);
+                } catch (\Illuminate\Contracts\Encryption\DecryptException $e) {
+                    // Preserve compatibility with passwords entered during this test and legacy plaintext values.
+                }
             }
 
             $connectionName = 'bdp_target_store_test';
@@ -502,21 +521,22 @@ return redirect()->route('bdp.settings')->with('status', 'Settings saved success
                 $hasProductsTable = \Illuminate\Support\Facades\Schema::connection($connectionName)->hasTable($productsTable);
 
                 if (!$hasProductsTable) {
-                    return back()->withInput()->with('error', "Database connected, but Botble table {$productsTable} was not found. Check database name or table prefix.");
+                    return back()->withInput($safeInput)->with('error', "Database connected, but Botble table {$productsTable} was not found. Check database name or table prefix.");
                 }
 
-                return back()->withInput()->with('success', 'Database connected successfully. Botble ecommerce table ec_products was detected.');
+                return back()->withInput($safeInput)->with('success', 'Database connected successfully. Botble ecommerce table ec_products was detected.');
             } catch (\Throwable $e) {
                 \Illuminate\Support\Facades\Log::warning('Legacy store DB test failed', [
                     'exception_type' => get_class($e),
                 ]);
-                return back()->withInput($request->except(['store_db_password', 'store_api_secret']))
+                return back()->withInput($safeInput)
                     ->with('error', 'Could not connect to the MySQL database. Check the actual MySQL hostname, port, network access and credentials. Website URLs cannot be used as DB hosts.');
             }
         }
 
         if ($method === 'api') {
-            $endpoint = trim((string) ($request->input('store_api_url')
+            $endpoint = trim((string) ($request->input('store_api_endpoint')
+                ?: $request->input('store_api_url')
                 ?: $request->input('store_api_base_url')
                 ?: $request->input('store_admin_api_url')
                 ?: $request->input('connected_store_api_url')
@@ -527,27 +547,39 @@ return redirect()->route('bdp.settings')->with('status', 'Settings saved success
                 ?: $request->input('api_secret')
                 ?: '');
 
+            if ($secret === '') {
+                $secret = (string) BdpSetting::getValue('store_api_secret', '');
+            }
+
+            if ($secret !== '') {
+                try {
+                    $secret = Crypt::decryptString($secret);
+                } catch (\Illuminate\Contracts\Encryption\DecryptException $e) {
+                    // A manually entered or legacy plaintext secret is still permitted.
+                }
+            }
+
             if ($endpoint === '' || $secret === '') {
-                return back()->withInput()->with('error', 'Please enter API endpoint URL and API secret key before testing the API connection.');
+                return back()->withInput($safeInput)->with('error', 'Please enter API endpoint URL and API secret key before testing the API connection.');
             }
 
             try {
                 $response = \Illuminate\Support\Facades\Http::withHeaders([
                     'X-Data-Pilot-Secret' => $secret,
                     'Accept' => 'application/json',
-                ])->timeout(15)->get(rtrim($endpoint, '/') . '/data-pilot/ping');
+                ])->timeout(15)->withoutRedirecting()->get(rtrim($endpoint, '/') . '/data-pilot/ping');
 
                 if ($response->successful()) {
-                    return back()->withInput()->with('success', 'API receiver connected successfully.');
+                    return back()->withInput($safeInput)->with('success', 'API receiver connected successfully.');
                 }
 
-                return back()->withInput()->with('error', 'API receiver responded with status: ' . $response->status());
+                return back()->withInput($safeInput)->with('error', 'API receiver responded with status: ' . $response->status());
             } catch (\Throwable $e) {
-                return back()->withInput()->with('error', 'API connection failed: ' . $e->getMessage());
+                return back()->withInput($safeInput)->with('error', 'API connection failed. Check endpoint, credentials and network access.');
             }
         }
 
-        return back()->withInput()->with('error', 'Invalid push method selected.');
+        return back()->withInput($safeInput)->with('error', 'Invalid push method selected.');
     }
 
 
