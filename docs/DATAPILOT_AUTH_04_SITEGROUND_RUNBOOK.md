@@ -11,11 +11,24 @@ responses are intentionally the same for eligible and unknown emails
 and cannot establish email delivery. Failed SMTP sends were caught
 and logged with only an exception class.
 
-A previously reported `MAIL_PORT=587465` is outside the valid TCP
-range of 1–65535. This is a strong *unverified staging configuration*
-hypothesis, not an established live root cause. The GitHub connector
-cannot read SiteGround's private installation, mail provider logs,
-mailbox, SMTP credentials or cached Laravel config.
+The user has now **confirmed** the SiteGround staging .env originally
+contained `MAIL_PORT=587465`, which is outside the TCP range 1–65535.
+After changing it to `465` with `MAIL_ENCRYPTION=ssl`, a PHP SSL
+connection to `mail.duasbyfk.pk:465` still failed. OpenSSL confirmed
+DNS, TCP and TLS 1.3 network connectivity, but explicit hostname
+verification returned **error 62: hostname mismatch**. The remote
+certificate identifies `duasbyfk.pk`, not the configured SMTP hostname
+`mail.duasbyfk.pk`.
+
+These are **two confirmed mail configuration/hostname validation faults**.
+A matching TLS hostname is required but does not by itself prove SMTP AUTH,
+provider sender authorization, Gmail acceptance or mailbox delivery.
+
+The actual correct outgoing server must be read from SiteGround → Site Tools
+→ Email → Accounts → Mail Configuration → Manual Settings. Do not replace
+`MAIL_HOST` with the certificate CN automatically or turn certificate
+verification off. GitHub access cannot edit the private server's .env,
+read the user's inbox or complete a real login.
 
 ## Staging verification (read-only first)
 
@@ -31,7 +44,15 @@ If reviewed AUTH-04 CLI diagnostic is installed, from this directory run:
 
     php scripts/diagnose-siteground-auth04.php
     php scripts/diagnose-siteground-auth04.php --probe-network
+    php scripts/diagnose-siteground-auth04.php --probe-network --probe-host=PROVIDER_APPROVED_SMTP_HOST
     php scripts/diagnose-siteground-auth04.php --account
+
+`--probe-network` now checks verified implicit SSL or STARTTLS, not
+just a TCP socket. `--probe-host` tests a provider-approved candidate
+without changing private .env or authenticating. SSL peer and hostname
+verification must stay ON. The correct host is the provider-supplied
+Outgoing Server; testing the apex domain is not permission to use it
+as the SMTP server.
 
 The final command privately prompts for the affected account email
 without writing it to logs. It reports only a non-secret account
@@ -58,7 +79,13 @@ TCP reachability, TLS type, authentication, sender authorization and
 provider delivery/suppression/bounce logs. DNS and TCP success alone
 do NOT prove authenticated SMTP or inbox delivery.
 
-Once correct private values are applied:
+Once the correct SMTP hostname is confirmed by SiteGround and SSL
+certificate validation passes, back up the private .env and edit only
+`MAIL_HOST` (retain the verified port/encryption pairing). Keep the
+SMTP password and sender domain authorization unchanged unless the
+provider explicitly requires an update.
+
+After updating the private environment:
 
     php artisan config:clear
     php artisan view:clear
