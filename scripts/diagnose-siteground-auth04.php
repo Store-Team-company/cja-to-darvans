@@ -62,6 +62,23 @@ if ($url !== '') {
     }
 }
 
+// Optional read-only comparison with a provider-approved outgoing hostname.
+// The server configuration is never changed by this diagnostic.
+$probeHost = $host;
+foreach ($argv as $arg) {
+    if (str_starts_with($arg, '--probe-host=')) {
+        $candidate = substr($arg, strlen('--probe-host='));
+        if (!$candidate
+            || filter_var($candidate, FILTER_VALIDATE_IP)
+            || !filter_var($candidate, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME)
+            || !str_contains($candidate, '.')) {
+            fwrite(STDERR, "AUTH-04: Invalid candidate hostname.\n");
+            exit(2);
+        }
+        $probeHost = $candidate;
+    }
+}
+
 $validPort = is_scalar($port) && ctype_digit((string) $port)
     && (int) $port >= 1 && (int) $port <= 65535;
 
@@ -88,17 +105,80 @@ if ($driver === 'failover' && array_intersect(
 if ($driver === 'smtp' && !$validPort) {
     echo "STOP: SMTP port outside valid 1..65535 range; correct private .env and clear config cache.\n";
 }
-if ($host !== '' && $driver === 'smtp') {
-    echo 'SMTP DNS resolves: '.(gethostbynamel($host) ? 'YES' : 'NO')."\n";
+if ($probeHost !== '' && $driver === 'smtp') {
+    echo 'Probe using configured SMTP host: '.($probeHost === $host ? 'YES' : 'NO (read-only candidate)')."\n";
+    echo 'SMTP DNS resolves: '.(gethostbynamel($probeHost) ? 'YES' : 'NO')."\n";
     if (in_array('--probe-network', $argv, true) && $validPort) {
         $errno = 0;
         $error = '';
-        $socket = @stream_socket_client('tcp://'.$host.':'.$port, $errno, $error, 5);
+        $socket = @stream_socket_client('tcp://'.$probeHost.':'.$port, $errno, $error, 6);
         echo 'TCP socket connects: '.(is_resource($socket) ? 'YES' : 'NO')."\n";
         if (is_resource($socket)) {
             fclose($socket);
         }
-        echo "Socket probe does not authenticate, send emails, or confirm inbox delivery.\n";
+
+        // PHP enforces certificate trust and hostname matching. Do not
+        // disable verify_peer, verify_peer_name or allow_self_signed.
+        $context = stream_context_create(['ssl' => [
+            'verify_peer' => true,
+            'verify_peer_name' => true,
+            'allow_self_signed' => false,
+            'peer_name' => $probeHost,
+            'SNI_enabled' => true,
+        ]]);
+
+        if (in_array(strtolower((string) ($smtp['encryption'] ?? '')), ['ssl', 'smtps'], true)) {
+            $secure = @stream_socket_client(
+                'ssl://'.$probeHost.':'.$port,
+                $tlsErrno, $tlsError, 8, STREAM_CLIENT_CONNECT, $context
+            );
+            echo 'Verified SMTP implicit TLS handshake: '.(is_resource($secure) ? 'PASS' : 'FAIL')."\n";
+            if (is_resource($secure)) {
+                fclose($secure);
+            }
+        } elseif (strtolower((string) ($smtp['encryption'] ?? '')) === 'tls') {
+            // STARTTLS: read the server's greeting and capability response,
+            // then request TLS. Never attempt AUTH or transmit an OTP.
+            $conn = @stream_socket_client('tcp://'.$probeHost.':'.$port, $tcpErrno, $tcpError, 8);
+            $valid = false;
+            if (is_resource($conn)) {
+                stream_set_timeout($conn, 5);
+                $readReply = static function ($stream): string {
+                    $response = '';
+                    for ($n = 0; $n < 30; $n++) {
+                        $line = fgets($stream, 1024);
+                        if ($line === false) {
+                            return '';
+                        }
+                        $response .= $line;
+                        if (preg_match('/^[0-9]{3} /', $line)) {
+                            return $response;
+                        }
+                    }
+                    return '';
+                };
+                $welcome = $readReply($conn);
+                if (str_starts_with($welcome, '220')) {
+                    fwrite($conn, "EHLO datapilot.local\r\n");
+                    $ehlo = $readReply($conn);
+                    if (str_starts_with($ehlo, '250') && stripos($ehlo, 'STARTTLS') !== false) {
+                        fwrite($conn, "STARTTLS\r\n");
+                        if (str_starts_with($readReply($conn), '220')) {
+                            $valid = @stream_socket_enable_crypto(
+                                $conn, true, STREAM_CRYPTO_METHOD_TLS_CLIENT
+                            ) === true;
+                        }
+                    }
+                }
+                fclose($conn);
+            }
+            echo 'Verified SMTP STARTTLS handshake: '.($valid ? 'PASS' : 'FAIL')."\n";
+        } else {
+            echo "SMTP TLS: NOT TESTED (provider encryption mode must be confirmed).\n";
+        }
+
+        echo "Probe never authenticates, sends email or proves mailbox delivery.\n";
+        echo "Use only the provider-approved outgoing hostname in private .env.\n";
     }
 }
 
