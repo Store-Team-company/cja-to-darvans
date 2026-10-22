@@ -122,11 +122,15 @@ class BdpCategoryMappingController extends Controller
         } catch (\Throwable $e) {
             // Do not display raw SQLSTATE exceptions, remote DB usernames or
             // hostnames; they are private installation configuration details.
+            \Illuminate\Support\Facades\Log::warning('Botble category fetch failed', [
+                'error_type' => get_class($e),
+            ]);
+
             return back()->with(
                 'error',
-                $e instanceof \RuntimeException
-                    ? $e->getMessage()
-                    : 'Could not fetch Botble categories. Verify the private connected-store configuration.'
+                'Could not fetch Botble categories. Check the connected store database '.
+                'configuration (SHOFY_DB_*) or use the Botble Connector when available. '.
+                'No saved category mappings were changed.'
             );
         }
     }
