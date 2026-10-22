@@ -13,7 +13,7 @@ class SaasBotbleConnectorManifestTest extends TestCase
 
         $this->assertSame('Botble\\DatapilotConnector\\', $manifest['namespace']);
         $this->assertSame('Botble\\DatapilotConnector\\Providers\\DatapilotConnectorServiceProvider', $manifest['provider']);
-        $this->assertSame('0.3.0', $manifest['version']);
+        $this->assertSame('0.3.1', $manifest['version']);
 
         $routes = (string) file_get_contents($root.'/routes/web.php');
         $this->assertStringContainsString("'middleware' => 'auth'", $routes);
@@ -31,5 +31,19 @@ class SaasBotbleConnectorManifestTest extends TestCase
         $this->assertStringContainsString("status = 'pending_review'", $inbox);
         $this->assertStringNotContainsString('Botble\\Ecommerce\\Models\\Product', $inbox);
         $this->assertStringNotContainsString('->publish(', $inbox);
+        
+        $settingsView = (string) file_get_contents($root.'/resources/views/settings.blade.php');
+        $incomingView = (string) file_get_contents($root.'/resources/views/incoming-products.blade.php');
+        $this->assertStringContainsString('BaseHelper::getAdminMasterLayoutTemplate()', $settingsView);
+        $this->assertStringContainsString('BaseHelper::getAdminMasterLayoutTemplate()', $incomingView);
+        $this->assertStringContainsString("route('datapilot.connector.pair')", $settingsView);
+        $this->assertStringContainsString("route('datapilot.connector.incoming')", $settingsView);
+        $this->assertStringNotContainsString('<!doctype html>', strtolower($settingsView));
+        $this->assertStringNotContainsString('<!doctype html>', strtolower($incomingView));
+
+        $pairingController = (string) file_get_contents($root.'/src/Http/Controllers/SettingsController.php');
+        $this->assertStringContainsString("withInput(", $pairingController);
+        $this->assertStringContainsString("'workspace_id', 'store_id'", $pairingController);
+        $this->assertStringContainsString('pairing_code', $pairingController);
     }
 }
