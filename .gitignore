@@ -17,3 +17,11 @@ yarn-error.log
 /.fleet
 /.idea
 /.vscode
+
+# Local one-off scripts, backups, deployment artifacts and runtime scratch files
+*.bak
+*.bak-*
+*.save
+*.old
+*.zip
+/storage/psysh/
