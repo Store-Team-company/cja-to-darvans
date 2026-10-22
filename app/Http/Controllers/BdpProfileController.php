@@ -63,7 +63,7 @@ class BdpProfileController extends Controller
                 'name' => config('app.name', 'Data Pilot') . ' Admin',
                 'email' => null,
                 'username' => env('BDP_ADMIN_USERNAME', 'admin'),
-                'password' => Hash::make(env('BDP_ADMIN_PASSWORD', 'admin12345')),
+                'password' => (string) env('BDP_LOGIN_PASSWORD_HASH', '') ?: (env('BDP_ADMIN_PASSWORD') ? Hash::make(env('BDP_ADMIN_PASSWORD')) : Hash::make(\Illuminate\Support\Str::random(48))),
             ]
         );
     }
