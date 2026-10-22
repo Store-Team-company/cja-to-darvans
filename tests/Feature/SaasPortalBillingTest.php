@@ -284,6 +284,94 @@ class SaasPortalBillingTest extends TestCase
         $this->assertTrue(app(SaasEntitlements::class)->allows($workspace, 'publish'));
     }
 
+    public function test_only_paid_workspace_owners_can_store_encrypted_cj_keys(): void
+    {
+        [$owner, $workspace] = $this->workspace();
+        $staff = User::factory()->create(['email_verified_at' => now()]);
+        $workspace->members()->attach($staff->id, ['role' => 'importer', 'status' => 'active']);
+
+        $saveRoute = route('saas.workspace.connections.cj.save', $workspace->public_id);
+        $this->actingAs($owner)->post($saveRoute, ['api_key' => 'CJSECRETFOREXAMPLE123456'])->assertForbidden();
+        $this->actingAs($staff)->post($saveRoute, ['api_key' => 'CJSECRETFOREXAMPLE123456'])->assertForbidden();
+
+        $workspace->billing()->create([
+            'stripe_customer_id' => 'cus_cjtest',
+            'stripe_subscription_id' => 'sub_cjtest',
+            'status' => 'active', 'stripe_price_id' => 'price_starter_test',
+            'plan_code' => 'starter', 'current_period_end' => now()->addMonth(),
+        ]);
+
+        $this->actingAs($owner)->post($saveRoute, [
+            'api_key' => 'CJSECRETFOREXAMPLE123456',
+        ])->assertRedirect()->assertSessionHas('status');
+
+        $connection = $workspace->cjConnections()->firstOrFail();
+        $this->assertSame('pending_verification', $connection->status);
+        $this->assertSame('CJSECRETFOREXAMPLE123456', $connection->api_key);
+        $this->assertNotSame('CJSECRETFOREXAMPLE123456', DB::table('saas_cj_connections')->first()->api_key);
+
+        $this->actingAs($owner)
+            ->get(route('saas.workspace.connections', $workspace->public_id))
+            ->assertOk()
+            ->assertDontSee('CJSECRETFOREXAMPLE123456');
+
+        $this->actingAs($owner)->delete(route('saas.workspace.connections.cj.remove', $workspace->public_id))
+            ->assertRedirect();
+        $this->assertNull($connection->fresh()->api_key);
+    }
+
+    public function test_store_registration_rejects_internal_urls_and_enforces_plan_limits(): void
+    {
+        [$owner, $workspace] = $this->workspace();
+        $workspace->billing()->create([
+            'stripe_customer_id' => 'cus_store_test',
+            'stripe_subscription_id' => 'sub_store_test',
+            'status' => 'active', 'stripe_price_id' => 'price_starter_test',
+            'plan_code' => 'starter', 'current_period_end' => now()->addMonth(),
+        ]);
+
+        $route = route('saas.workspace.connections.botble.add', $workspace->public_id);
+        foreach (['http://shop.example.com', 'https://127.0.0.1', 'https://localhost',
+            'https://user:pass@shop.example.com', 'https://shop.example.com:8080',
+        ] as $unsafe) {
+            $this->actingAs($owner)->post($route, [
+                'name' => 'My Store', 'base_url' => $unsafe,
+            ])->assertSessionHasErrors('base_url');
+        }
+        $this->assertDatabaseCount('saas_botble_stores', 0);
+
+        $this->actingAs($owner)->post($route, [
+            'name' => 'Primary Store', 'base_url' => 'https://shop.example.com/',
+        ])->assertRedirect()->assertSessionHas('status');
+
+        $this->assertDatabaseHas('saas_botble_stores', [
+            'workspace_id' => $workspace->id, 'name' => 'Primary Store',
+            'base_url' => 'https://shop.example.com', 'status' => 'pending_verification',
+        ]);
+
+        $this->actingAs($owner)->post($route, [
+            'name' => 'Second Store', 'base_url' => 'https://other.example.com',
+        ])->assertSessionHasErrors('base_url');
+
+        $this->assertDatabaseCount('saas_botble_stores', 1);
+    }
+
+    public function test_one_customer_cannot_remove_another_customers_store(): void
+    {
+        [$owner, $workspace] = $this->workspace();
+        [$other, $different] = $this->workspace('storeowner@example.test');
+        $store = $different->stores()->create([
+            'name' => 'Private Botble Store',
+            'base_url' => 'https://private-shop.example.com',
+            'status' => 'pending_verification',
+        ]);
+        $url = route('saas.workspace.connections.botble.remove', [
+            'workspace' => $workspace->public_id, 'store' => $store->id,
+        ]);
+        $this->actingAs($owner)->delete($url)->assertNotFound();
+        $this->assertDatabaseHas('saas_botble_stores', ['id' => $store->id]);
+    }
+
     public function test_reset_pages_exist_for_customers(): void
     {
         $this->get(route('saas.password.request'))->assertOk()->assertSee('Forgot your password');
