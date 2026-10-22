@@ -35,7 +35,8 @@ class DatapilotBotbleNativeCatalogGuardTest extends TestCase
         (require $root.'/database/migrations/2026_10_22_000001_create_datapilot_connector_tables.php')->up();
         (require $root.'/database/migrations/2026_10_22_000002_create_datapilot_product_mappings.php')->up();
         (require $root.'/database/migrations/2026_10_22_000003_add_datapilot_draft_import_history.php')->up();
-        Route::post('/datapilot-native-approve/{draft}', [IncomingProductsController::class, 'approve']);
+        Route::post('/datapilot-native-approve/{draft}', [IncomingProductsController::class, 'approve'])
+            ->middleware(\Illuminate\Routing\Middleware\SubstituteBindings::class);
         config()->set('datapilot-connector.catalog_import_enabled', false);
     }
 
