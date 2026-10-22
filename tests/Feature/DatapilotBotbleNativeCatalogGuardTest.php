@@ -114,4 +114,30 @@ class DatapilotBotbleNativeCatalogGuardTest extends TestCase
                 ->where('source_product_id', 'CJ00001')->count()
         );
     }
+    public function test_revoked_connection_rejects_catalog_approval(): void
+    {
+        $draft = $this->draft();
+        $pair = ConnectorPairing::query()->findOrFail($draft->pairing_id);
+        $pair->status = 'revoked';
+        $pair->shared_secret = null;
+        $pair->save();
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Connection revoked');
+        app(CatalogImportService::class)->approve($draft);
+    }
+
+    public function test_media_payload_is_not_silently_discarded(): void
+    {
+        $draft = $this->draft();
+        $payload = $draft->payload;
+        $payload['images'] = ['https://images.example.test/item.jpg'];
+        $draft->payload = $payload;
+        $draft->save();
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Image import is not enabled');
+        app(CatalogImportService::class)->approve($draft);
+    }
+
 }
