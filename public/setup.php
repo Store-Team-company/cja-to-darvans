@@ -69,7 +69,7 @@ function dpEnvSet(string $text, array $items): string
         $assignment = $key.'='.dpEnvQuote((string) $value);
         $pattern = '/^'.preg_quote($key, '/').'=.*$/m';
         $text = preg_match($pattern, $text)
-            ? (string) preg_replace($pattern, str_replace('\\', '\\\\', $assignment), $text, 1)
+            ? (string) preg_replace_callback($pattern, static fn (): string => $assignment, $text, 1)
             : rtrim($text)."\n".$assignment."\n";
     }
 
@@ -318,7 +318,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 session_destroy();
             } catch (Throwable $e) {
                 error_log('[DataPilot installer] '.$e->getMessage());
-                $error = $e->getMessage() instanceof Stringable ? 'Installation failed.' : $e->getMessage();
+                $error = $e instanceof InvalidArgumentException
+                    ? $e->getMessage()
+                    : 'Installation failed. Verify the server settings and check the protected Laravel logs.';
             }
         }
     }
