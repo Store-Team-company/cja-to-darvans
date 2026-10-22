@@ -54,12 +54,12 @@ class DatapilotConnectorInboxSecurityTest extends TestCase
         ];
     }
 
-    private function send(array $data, ?string $nonce = null, ?string $time = null, bool $tamper = false)
+    private function send(array $data, ?string $nonce = null, ?string $time = null, bool $tamper = false, ?string $secretOverride = null)
     {
         $body = json_encode($data, JSON_THROW_ON_ERROR);
         $nonce ??= bin2hex(random_bytes(16));
         $time ??= (string) time();
-        $secret = $this->pairing->shared_secret;
+        $secret = $secretOverride ?? $this->pairing->shared_secret;
         $signature = 'sha256='.ConnectorSigning::sign($secret, 'POST', '/api/datapilot/v1/drafts', $time, $nonce, $body);
         if ($tamper) {
             $body = str_replace('Sample dress', 'Tampered dress', $body);
@@ -120,10 +120,11 @@ class DatapilotConnectorInboxSecurityTest extends TestCase
         $this->send($this->sample())->assertStatus(503);
         config()->set('datapilot-connector.inbound_enabled', true);
 
+        $oldSecret = $this->pairing->shared_secret;
         $this->pairing->status = 'revoked';
         $this->pairing->shared_secret = null;
         $this->pairing->save();
-        $this->send($this->sample())->assertUnauthorized();
+        $this->send($this->sample(), secretOverride: $oldSecret)->assertUnauthorized();
         $this->assertDatabaseCount('datapilot_connector_drafts', 0);
     }
 
