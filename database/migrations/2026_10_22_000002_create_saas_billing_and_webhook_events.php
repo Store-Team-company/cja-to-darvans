@@ -14,6 +14,9 @@ return new class extends Migration
             $table->string('stripe_customer_id', 128)->nullable()->unique();
             $table->string('stripe_subscription_id', 128)->nullable()->unique();
             $table->string('stripe_price_id', 128)->nullable();
+            $table->string('pending_checkout_id', 128)->nullable();
+            $table->longText('pending_checkout_url')->nullable();
+            $table->timestamp('pending_checkout_expires_at')->nullable();
             $table->string('plan_code', 24)->nullable();
             $table->string('status', 30)->default('incomplete');
             $table->timestamp('current_period_end')->nullable();

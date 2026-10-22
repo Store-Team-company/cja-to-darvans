@@ -42,31 +42,64 @@ class SaasBillingController extends Controller
         }
 
         $plan = $plans->plan($data['plan']);
-        $current = $entitlements->billing($workspace);
-        $args = [
-            'mode' => 'subscription',
-            'client_reference_id' => $workspace->public_id,
-            'line_items' => [['price' => $plan['stripe_price_id'], 'quantity' => 1]],
-            'metadata' => ['workspace_id' => $workspace->public_id],
-            'subscription_data' => ['metadata' => ['workspace_id' => $workspace->public_id]],
-            'success_url' => route('saas.workspace.billing', $workspace->public_id).'?checkout=success',
-            'cancel_url' => route('saas.workspace.billing', $workspace->public_id).'?checkout=cancel',
-        ];
-        if ($current && $current->stripe_customer_id) {
-            $args['customer'] = $current->stripe_customer_id;
-        } else {
-            $args['customer_email'] = $request->user()->email;
-        }
 
         try {
-            $session = $stripe->checkout($args, 'saas-checkout-'.$workspace->id.'-'.Str::uuid());
-        } catch (RuntimeException) {
-            return back()->with('error', 'Unable to start Stripe checkout. Please try again.');
-        }
+            // Lock workspace row (not just billing row) to serialize the very
+            // first checkout before any subscription record exists.
+            $url = \Illuminate\Support\Facades\DB::transaction(function () use (
+                $workspace, $request, $entitlements, $stripe, $plan
+            ): string {
+                SaasWorkspace::whereKey($workspace->id)->lockForUpdate()->firstOrFail();
 
-        $url = (string) ($session['url'] ?? '');
-        if (!$this->stripeRedirect($url, 'checkout.stripe.com')) {
-            return back()->with('error', 'Stripe did not return a valid checkout link.');
+                $bill = $workspace->billing()->lockForUpdate()->first();
+                if ($bill && $bill->status !== 'incomplete'
+                    && in_array($bill->status, ['active', 'trialing'], true)) {
+                    throw new RuntimeException('An active subscription already exists. Manage it through the billing portal.');
+                }
+
+                if ($bill && $bill->pending_checkout_url
+                    && $bill->pending_checkout_expires_at
+                    && $bill->pending_checkout_expires_at->isFuture()
+                    && $this->stripeRedirect($bill->pending_checkout_url, 'checkout.stripe.com')) {
+                    return $bill->pending_checkout_url;
+                }
+
+                $args = [
+                    'mode' => 'subscription',
+                    'client_reference_id' => $workspace->public_id,
+                    'line_items' => [['price' => $plan['stripe_price_id'], 'quantity' => 1]],
+                    'metadata' => ['workspace_id' => $workspace->public_id],
+                    'subscription_data' => ['metadata' => ['workspace_id' => $workspace->public_id]],
+                    'success_url' => route('saas.workspace.billing', $workspace->public_id).'?checkout=success',
+                    'cancel_url' => route('saas.workspace.billing', $workspace->public_id).'?checkout=cancel',
+                ];
+                if ($bill && $bill->stripe_customer_id) {
+                    $args['customer'] = $bill->stripe_customer_id;
+                } else {
+                    $args['customer_email'] = $request->user()->email;
+                }
+                $session = $stripe->checkout($args, 'saas-checkout-'.$workspace->id.'-'.Str::uuid());
+                $url = (string) ($session['url'] ?? '');
+                $sessionId = (string) ($session['id'] ?? '');
+                if (!$this->stripeRedirect($url, 'checkout.stripe.com')
+                    || !preg_match('/^cs_(test_|live_)[A-Za-z0-9_]+$/D', $sessionId)) {
+                    throw new RuntimeException('Stripe did not return a valid checkout session.');
+                }
+
+                $bill ??= new \App\Models\SaasWorkspaceBilling();
+                $bill->workspace_id = $workspace->id;
+                $bill->pending_checkout_id = $sessionId;
+                $bill->pending_checkout_url = $url;
+                $expiry = is_numeric($session['expires_at'] ?? null)
+                    ? (int) $session['expires_at']
+                    : now()->addHours(23)->timestamp;
+                $bill->pending_checkout_expires_at = \Illuminate\Support\Carbon::createFromTimestampUTC($expiry);
+                $bill->save();
+
+                return $url;
+            });
+        } catch (RuntimeException) {
+            return back()->with('error', 'Unable to start checkout, or an existing subscription needs attention. Try Manage subscription.');
         }
 
         // Returning from success_url is not proof of payment. Only a signed

@@ -131,12 +131,40 @@ class SaasPortalBillingTest extends TestCase
             && str_contains($request->url(), 'checkout/sessions')
             && str_contains((string) $request->body(), $workspace->public_id)
             && !str_contains((string) $request->body(), 'sk_test_test_only_not_live'));
-        $this->assertDatabaseCount('saas_workspace_billing', 0);
+        $this->assertDatabaseHas('saas_workspace_billing', [
+            'workspace_id' => $workspace->id,
+            'status' => 'incomplete',
+            'pending_checkout_id' => 'cs_test_123',
+        ]);
         $this->assertFalse(app(SaasEntitlements::class)->active($workspace));
 
         $this->actingAs($owner)
             ->get(route('saas.workspace.billing', $workspace->public_id).'?checkout=success')
             ->assertOk();
+        $this->assertFalse(app(SaasEntitlements::class)->active($workspace));
+    }
+
+    public function test_repeated_checkout_reuses_one_pending_session_without_double_creation(): void
+    {
+        [$owner, $workspace] = $this->workspace();
+        Http::fake(['api.stripe.com/*' => Http::response([
+            'id' => 'cs_test_pending_1',
+            'url' => 'https://checkout.stripe.com/c/pay/cs_test_pending_1',
+            'expires_at' => now()->addHours(10)->timestamp,
+        ], 200)]);
+        $route = route('saas.workspace.billing.checkout', $workspace->public_id);
+
+        // Distinct clicks must not generate additional purchasable sessions.
+        $this->actingAs($owner)->post($route, ['plan' => 'starter'])
+            ->assertRedirect('https://checkout.stripe.com/c/pay/cs_test_pending_1');
+        $this->actingAs($owner)->post($route, ['plan' => 'growth'])
+            ->assertRedirect('https://checkout.stripe.com/c/pay/cs_test_pending_1');
+
+        Http::assertSentCount(1);
+        $this->assertDatabaseCount('saas_workspace_billing', 1);
+        $this->assertDatabaseHas('saas_workspace_billing', [
+            'workspace_id' => $workspace->id, 'pending_checkout_id' => 'cs_test_pending_1',
+        ]);
         $this->assertFalse(app(SaasEntitlements::class)->active($workspace));
     }
 

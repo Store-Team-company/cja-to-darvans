@@ -156,6 +156,9 @@ class SaasStripeWebhookProcessor
                 return;
             }
 
+            $bill->pending_checkout_id = null;
+            $bill->pending_checkout_url = null;
+            $bill->pending_checkout_expires_at = null;
             $bill->stripe_customer_id = $subscription['customer'];
             $bill->stripe_subscription_id = $subscription['id'];
             $bill->stripe_price_id = $price;

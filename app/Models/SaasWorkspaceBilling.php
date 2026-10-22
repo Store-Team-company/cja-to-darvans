@@ -13,9 +13,13 @@ class SaasWorkspaceBilling extends Model
 
     protected $casts = [
         'current_period_end' => 'datetime',
+        'pending_checkout_url' => 'encrypted',
+        'pending_checkout_expires_at' => 'datetime',
         'cancel_at_period_end' => 'boolean',
         'last_event_created' => 'integer',
     ];
+
+    protected $hidden = ['pending_checkout_url'];
 
     public function workspace(): BelongsTo
     {
