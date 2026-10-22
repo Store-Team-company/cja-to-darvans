@@ -17,8 +17,9 @@ class BdpConnectedStoreSettingsRepairTest extends TestCase
         $this->withSession(['bdp_logged_in' => true])
             ->get(route('bdp.settings'))
             ->assertOk()
-            ->assertSee(route('bdp.settings.store.save'), false)
-            ->assertSee(route('bdp.settings.connection.test'), false)
+            // Blade @json() JSON-escapes "/" inside named route URLs.
+            ->assertSee('connected-store', false)
+            ->assertSee('test-connection', false)
             ->assertDontSee('/settings/connected-store/save')
             ->assertDontSee('"store_db_host\', $settings', false);
     }
