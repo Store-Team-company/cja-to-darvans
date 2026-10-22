@@ -224,17 +224,34 @@ return view('balenco-data-pilot.products', compact(
     }
 
 
-    public function categoryMapping(BdpShofyCategoryService $categoryService)
+    public function categoryMapping()
     {
-        try {
-            $sourceCategories = $categoryService->sourceCategories();
-            $balencoCategories = $categoryService->balencoCategories();
-            $mappings = BdpCategoryMapping::query()->get()->keyBy(fn ($item) => mb_strtolower($item->source_category));
+        // Opening Category Mapping should never need a remote Botble database.
+        // Display saved category snapshots and source categories locally;
+        // administrators can explicitly fetch remote categories from the page.
+        // This also keeps connection errors and SQL diagnostics off the dashboard.
+        $sourceCategories = BdpProduct::query()
+            ->whereNotNull('categories')
+            ->pluck('categories')
+            ->flatMap(fn ($value) => collect(explode(',', (string) $value))
+                ->map(fn ($item) => trim((string) $item))
+                ->filter())
+            ->unique()
+            ->sort()
+            ->values();
 
-            return view('balenco-data-pilot.category-mapping', compact('sourceCategories', 'balencoCategories', 'mappings'));
-        } catch (\Throwable $e) {
-            return redirect()->route('bdp.index')->with('error', 'Category mapping error: ' . $e->getMessage());
-        }
+        $balencoCategories = \App\Models\BdpBalencoCategory::query()
+            ->orderBy('path')
+            ->orderBy('name')
+            ->get();
+
+        $mappings = BdpCategoryMapping::query()
+            ->orderBy('source_category')
+            ->get();
+
+        return view('balenco-data-pilot.category-mapping', compact(
+            'sourceCategories', 'balencoCategories', 'mappings'
+        ));
     }
 
     public function saveCategoryMapping(Request $request)

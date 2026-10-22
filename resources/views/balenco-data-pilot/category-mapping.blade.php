@@ -1,6 +1,6 @@
 @extends('balenco-data-pilot.layout')
 
-@section('title', 'Category Mapping | Balenco Data Pilot')
+@section('title', 'Category Mapping | Data Pilot')
 
 @section('content')
 <style>
@@ -20,12 +20,12 @@
     <div class="bdp-category-head">
         <div class="bdp-page-title">
             <h1>Category Mapping</h1>
-            <p>Connect CJ/Data Pilot categories to real Balenco/Shofy categories before syncing products.</p>
+            <p>Match CJ product categories to your connected Botble store. Saved mappings stay available even when the store is offline.</p>
         </div>
         <div class="bdp-category-actions">
             <form method="post" action="{{ route('bdp.categories.mapping.fetch') }}">
                 @csrf
-                <button class="bdp-btn light" type="submit">Fetch Balenco Categories</button>
+                <button class="bdp-btn light" type="submit">Refresh Botble Categories</button>
             </form>
             <form method="post" action="{{ route('bdp.categories.mapping.auto') }}">
                 @csrf
@@ -41,15 +41,18 @@
         <div class="bdp-stat-card"><div class="bdp-stat-icon is-blue">⌁</div><div><div class="bdp-stat-label">Source Categories</div><div class="bdp-stat-number">{{ $sourceCategories->count() }}</div><div class="bdp-stat-note">Found in Data Pilot</div></div></div>
         <div class="bdp-stat-card"><div class="bdp-stat-icon is-green">✓</div><div><div class="bdp-stat-label">Mapped</div><div class="bdp-stat-number">{{ $mappings->count() }}</div><div class="bdp-stat-note">Saved mappings</div></div></div>
         <div class="bdp-stat-card"><div class="bdp-stat-icon is-orange">!</div><div><div class="bdp-stat-label">Pending</div><div class="bdp-stat-number">{{ max($sourceCategories->count() - $mappings->count(), 0) }}</div><div class="bdp-stat-note">Need mapping</div></div></div>
-        <div class="bdp-stat-card"><div class="bdp-stat-icon is-purple">□</div><div><div class="bdp-stat-label">Balenco Categories</div><div class="bdp-stat-number">{{ $balencoCategories->count() }}</div><div class="bdp-stat-note">Fetched from Shofy</div></div></div>
+        <div class="bdp-stat-card"><div class="bdp-stat-icon is-purple">□</div><div><div class="bdp-stat-label">Botble Categories</div><div class="bdp-stat-number">{{ $balencoCategories->count() }}</div><div class="bdp-stat-note">Saved locally</div></div></div>
     </div>
 
     <div class="bdp-category-grid">
         <div class="bdp-card bdp-category-card">
-            <div class="bdp-card-header"><div><h2 class="bdp-card-title">Map Category</h2><p class="bdp-card-subtitle">Choose a Data Pilot/CJ category and connect it to the final Balenco category.</p></div></div>
+            <div class="bdp-card-header"><div><h2 class="bdp-card-title">Map Category</h2><p class="bdp-card-subtitle">Link a CJ category to a saved Botble category. Refreshing categories does not remove your mappings.</p></div></div>
 
             @if($balencoCategories->isEmpty())
-                <div class="bdp-category-empty"><h3>No Balenco categories fetched yet</h3><p>Click <strong>Fetch Balenco Categories</strong> first. This reads categories from <code>ec_product_categories</code>.</p></div>
+                <div class="bdp-category-empty"><h3>Connect your Botble store to load categories</h3>
+                    <p>No Botble categories have been cached yet. Configure the legacy store connection, then click <strong>Refresh Botble Categories</strong>. The mapping page remains usable even while the store is offline.</p>
+                    <a href="{{ route('bdp.settings') }}" class="bdp-btn light" style="display:inline-flex;margin-top:12px">Check Store Settings</a>
+                </div>
             @else
                 <form method="post" action="{{ route('bdp.categories.mapping.store') }}" class="bdp-category-form-grid">
                     @csrf
@@ -63,7 +66,7 @@
                         </select>
                     </div>
                     <div>
-                        <label>Balenco category</label>
+                        <label>Botble category</label>
                         <select name="balenco_category_id" required>
                             <option value="">Select Balenco category...</option>
                             @foreach($balencoCategories as $category)
@@ -90,7 +93,7 @@
         <div class="bdp-card-header"><div><h2 class="bdp-card-title">Saved Mappings</h2><p class="bdp-card-subtitle">These mappings can be reused when assigning categories to selected products.</p></div></div>
         <div class="bdp-table-wrap">
             <table class="bdp-table">
-                <thead><tr><th>Data Pilot / CJ Category</th><th>Balenco Category</th><th>Balenco ID</th><th>Notes</th></tr></thead>
+                <thead><tr><th>Data Pilot / CJ Category</th><th>Balenco Category</th><th>Botble ID</th><th>Notes</th></tr></thead>
                 <tbody>
                     @forelse($mappings as $mapping)
                         <tr>
@@ -100,7 +103,7 @@
                             <td>{{ $mapping->notes ?: '—' }}</td>
                         </tr>
                     @empty
-                        <tr><td colspan="4"><div class="bdp-category-empty">No mappings saved yet.</div></td></tr>
+                        <tr><td colspan="4"><div class="bdp-category-empty">No category mappings saved yet. Connect Botble and map your first CJ category.</div></td></tr>
                     @endforelse
                 </tbody>
             </table>

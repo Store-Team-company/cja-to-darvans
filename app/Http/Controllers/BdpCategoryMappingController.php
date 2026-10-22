@@ -36,12 +36,7 @@ class BdpCategoryMappingController extends Controller
 
         BdpCategoryMapping::updateOrCreate(
             ['source_category' => trim($data['source_category'])],
-            [
-                'balenco_category_id' => $category->balenco_category_id,
-                'balenco_category_name' => $category->name,
-                'balenco_category_path' => $category->path ?: $category->name,
-                'notes' => $data['notes'] ?? null,
-            ]
+            $this->mappingAttributes($category, $data['notes'] ?? null)
         );
 
         return back()->with('success', 'Category mapping saved.');
@@ -65,13 +60,10 @@ class BdpCategoryMappingController extends Controller
             });
 
             if ($best) {
-                BdpCategoryMapping::create([
-                    'source_category' => $sourceCategory,
-                    'balenco_category_id' => $best->balenco_category_id,
-                    'balenco_category_name' => $best->name,
-                    'balenco_category_path' => $best->path ?: $best->name,
-                    'notes' => 'Auto-mapped by similar category name.',
-                ]);
+                BdpCategoryMapping::create(array_merge(
+                    ['source_category' => $sourceCategory],
+                    $this->mappingAttributes($best, 'Auto-mapped by similar category name.')
+                ));
                 $created++;
             }
         }
@@ -79,20 +71,17 @@ class BdpCategoryMappingController extends Controller
         return back()->with('success', "Auto-map complete. {$created} mappings created.");
     }
 
-    public function fetchBalencoCategories(Request $request)
+    public function fetchBalencoCategories(Request $request, \App\Services\BdpShofyCategoryService $categoryService)
     {
-        $connection = $request->input('connection') ?: $this->setting('balenco_db_connection') ?: $this->setting('shofy_db_connection') ?: config('database.default');
-
         try {
-            $rows = DB::connection($connection)
-                ->table('ec_product_categories')
-                ->select(['id', 'name', 'parent_id', 'status'])
-                ->orderBy('parent_id')
-                ->orderBy('name')
-                ->get();
+            // Reuse the same controlled Botble connection as other legacy
+            // store operations. Never use a requester-selected DB connection
+            // or fall back to the Data Pilot application's own database.
+            $rows = collect($categoryService->balencoCategories())
+                ->map(fn (array $item) => (object) $item);
 
             if ($rows->isEmpty()) {
-                return back()->with('error', 'No categories found in ec_product_categories.');
+                return back()->with('error', 'The connected Botble store has no categories to import.');
             }
 
             $byId = $rows->keyBy('id');
@@ -114,17 +103,50 @@ class BdpCategoryMappingController extends Controller
                     [
                         'name' => $row->name,
                         'path' => collect($parts)->filter()->implode(' > '),
-                        'parent_id' => $row->parent_id,
+                        'parent_id' => $row->parent_id ?? null,
                         'status' => $row->status ?? null,
                         'raw_json' => json_encode($row),
                     ]
                 );
             }
 
-            return back()->with('success', 'Fetched '.$rows->count().' Balenco categories.');
+            return back()->with('success', 'Imported '.$rows->count().' categories from your Botble store.');
         } catch (\Throwable $e) {
-            return back()->with('error', 'Could not fetch Balenco categories: '.$e->getMessage());
+            // Do not display raw SQLSTATE exceptions, remote DB usernames or
+            // hostnames; they are private installation configuration details.
+            \Illuminate\Support\Facades\Log::warning('Botble category fetch failed', [
+                'error_type' => get_class($e),
+            ]);
+
+            return back()->with(
+                'error',
+                'Could not fetch Botble categories. Check the connected store database '.
+                'configuration (SHOFY_DB_*) or use the Botble Connector when available. '.
+                'No saved category mappings were changed.'
+            );
         }
+    }
+
+    /**
+     * Older installations created bdp_category_mappings without optional
+     * path/notes columns. Keep existing stores fully functional without a
+     * destructive schema migration. Newer schemas retain rich metadata.
+     */
+    private function mappingAttributes(BdpBalencoCategory $category, ?string $notes): array
+    {
+        $attributes = [
+            'balenco_category_id' => $category->balenco_category_id,
+            'balenco_category_name' => $category->name,
+        ];
+
+        if (Schema::hasColumn('bdp_category_mappings', 'balenco_category_path')) {
+            $attributes['balenco_category_path'] = $category->path ?: $category->name;
+        }
+        if (Schema::hasColumn('bdp_category_mappings', 'notes')) {
+            $attributes['notes'] = $notes;
+        }
+
+        return $attributes;
     }
 
     private function balencoCategories()

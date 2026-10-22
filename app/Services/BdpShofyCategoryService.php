@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use RuntimeException;
 use Throwable;
+use Illuminate\Support\Facades\Log;
 
 class BdpShofyCategoryService
 {
@@ -75,16 +76,47 @@ class BdpShofyCategoryService
 
     private function assertConnectionReady(): void
     {
-        if (!config('balenco-data-pilot.shofy_db.database') || !config('balenco-data-pilot.shofy_db.username')) {
-            throw new RuntimeException('Balenco/Shofy DB connection is not configured. Add SHOFY_DB_* values in .env.');
+        // Prevent common installation-wizard placeholders from reaching MySQL.
+        // A failed remote Botble connection must not expose credentials,
+        // server names, SQL statements or stack traces to the web dashboard.
+        $database = trim((string) config('balenco-data-pilot.shofy_db.database', ''));
+        $username = trim((string) config('balenco-data-pilot.shofy_db.username', ''));
+        $host = trim((string) config('balenco-data-pilot.shofy_db.host', ''));
+        $password = (string) config('balenco-data-pilot.shofy_db.password', '');
+
+        foreach ([$database, $username, $host] as $value) {
+            if ($value === '' || preg_match('/^(YOUR_|REPLACE_|CHANGE_ME|EXAMPLE_|SET_ME)/i', $value)) {
+                throw new RuntimeException(
+                    'The Botble store database is not connected. Configure the private SHOFY_DB_* '.
+                    'values for your existing store, or connect through the upcoming Data Pilot Botble Connector.'
+                );
+            }
+        }
+
+        if (preg_match('/^(YOUR_|REPLACE_|CHANGE_ME|EXAMPLE_|SET_ME)/i', $password)) {
+            throw new RuntimeException('The Botble store password is still a placeholder. Update the private store connection settings.');
         }
 
         try {
-            if (!Schema::connection($this->connection)->hasTable('ec_product_categories')) {
-                throw new RuntimeException('Connected database does not have ec_product_categories table.');
-            }
+            $hasCategories = Schema::connection($this->connection)->hasTable('ec_product_categories');
         } catch (Throwable $e) {
-            throw new RuntimeException('Unable to read Balenco categories: ' . $e->getMessage());
+            Log::warning('Botble category sync could not connect to the configured store', [
+                'error_type' => get_class($e),
+            ]);
+
+            throw new RuntimeException(
+                'Could not read Botble categories. Check the store database host, '.
+                'credentials and permissions in your private configuration.',
+                0,
+                $e
+            );
+        }
+
+        if (!$hasCategories) {
+            throw new RuntimeException(
+                'Botble was reached, but its ec_product_categories table is missing. '.
+                'Check the selected store database and Botble eCommerce installation.'
+            );
         }
     }
 }
