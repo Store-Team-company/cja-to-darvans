@@ -19,7 +19,9 @@ class SaasBotblePairingController extends Controller
     {
         app(WorkspacePermissions::class)->authorize($request->user(), $workspace, 'manage_connections');
         abort_unless($store->workspace_id === $workspace->id, 404);
-        abort_unless(app(SaasEntitlements::class)->active($workspace), 403, 'An active plan is required to pair a store.');
+        $paid = app(SaasEntitlements::class)->active($workspace);
+        $pilot = app(\App\Services\Saas\SaasFirstPartyPilot::class)->allowsPairing($workspace, $store);
+        abort_unless($paid || $pilot, 403, 'An active plan or authorized internal pilot is required to pair a store.');
         abort_unless(in_array($store->status, ['pending_verification', 'disconnected', 'revoked'], true), 409,
             'Connected stores must be revoked before pairing again.');
 
@@ -35,6 +37,12 @@ class SaasBotblePairingController extends Controller
             );
         });
 
+        if ($pilot && !$paid) {
+            \Illuminate\Support\Facades\Log::notice('Data Pilot internal Botble pilot pairing code issued', [
+                'workspace_id' => $workspace->public_id, 'store_id' => $store->public_id,
+            ]);
+        }
+
         // This one-time secret is shown to the authenticated merchant ONCE.
         return back()->with('pairing_code', $code)->with('pairing_store', $store->public_id)
             ->with('status', 'Enter this one-time code in the Data Pilot plugin on your Botble site within ten minutes.');
@@ -42,7 +50,8 @@ class SaasBotblePairingController extends Controller
 
     public function complete(Request $request): JsonResponse
     {
-        if (!config('saas.enabled') || !config('saas.billing_enabled')) {
+        if (!config('saas.enabled')
+            || (!config('saas.billing_enabled') && !config('saas.botble_pilot.enabled'))) {
             return response()->json(['message' => 'Pairing is unavailable.'], 503);
         }
         $data = $request->validate([
@@ -58,7 +67,8 @@ class SaasBotblePairingController extends Controller
                 ->lockForUpdate()->first();
 
             if (!$store || !in_array($store->status, ['pending_verification', 'disconnected', 'revoked'], true)
-                || !app(SaasEntitlements::class)->active($store->workspace)) {
+                || !(app(SaasEntitlements::class)->active($store->workspace)
+                    || app(\App\Services\Saas\SaasFirstPartyPilot::class)->allowsPairing($store->workspace, $store))) {
                 return null;
             }
 
@@ -84,6 +94,12 @@ class SaasBotblePairingController extends Controller
             $store->status = 'connected';
             $store->last_verified_at = now();
             $store->save();
+            if (app(\App\Services\Saas\SaasFirstPartyPilot::class)->allowsPairing($store->workspace, $store)
+                && !app(SaasEntitlements::class)->active($store->workspace)) {
+                \Illuminate\Support\Facades\Log::notice('Data Pilot internal Botble pilot securely paired', [
+                    'workspace_id' => $store->workspace->public_id, 'store_id' => $store->public_id,
+                ]);
+            }
             DB::table('saas_botble_pairing_challenges')->where('store_id', $store->id)
                 ->update(['used_at' => now(), 'updated_at' => now()]);
 

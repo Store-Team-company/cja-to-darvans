@@ -62,7 +62,10 @@ class SaasConnectionController extends Controller
             // Serialize competing registrations in the same workspace so a
             // plan's store limit cannot be bypassed by simultaneous requests.
             $locked = SaasWorkspace::whereKey($workspace->id)->lockForUpdate()->firstOrFail();
-            if (!app(\App\Services\Saas\SaasEntitlements::class)->allows($locked, 'connect_store')) {
+            $paid = app(\App\Services\Saas\SaasEntitlements::class)->allows($locked, 'connect_store');
+            $firstParty = app(\App\Services\Saas\SaasFirstPartyPilot::class)
+                ->allowsStoreRegistration($locked, $url);
+            if (!$paid && !$firstParty) {
                 throw ValidationException::withMessages([
                     'base_url' => 'Your current plan has reached its store limit.',
                 ]);

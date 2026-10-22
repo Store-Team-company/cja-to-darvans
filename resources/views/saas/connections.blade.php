@@ -1,6 +1,12 @@
 @extends('saas.layout')
 @section('title', 'Connections')
 @section('content')
+@php
+    // Only the specifically pinned internal staging workspace may see the
+    // limited no-billing Botble registration form.
+    $pilot = app(\App\Services\Saas\SaasFirstPartyPilot::class);
+    $canRegisterPilotStore = $pilot->allowsStoreRegistration($workspace, 'https://sandbox.daystart.pk');
+@endphp
 <div class="page-title"><span class="eyebrow">Your integrations</span><h1>Connections</h1><p>Configure your own CJ account and Botble destination stores. All saved connections belong exclusively to this workspace.</p></div>
 <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(320px,1fr))">
     <div class="card">
@@ -21,14 +27,17 @@
     <div class="card">
         <div class="split"><h2>Botble stores</h2><span class="tag">{{ $stores->count() }} saved</span></div>
         <p>Register the public HTTPS domain of a Botble store you own. Install the Data Pilot Botble Connector plugin on your store, then pair it with a single-use code.</p>
-        @if($role === 'owner' && $activeSubscription)
+        @if($role === 'owner' && ($activeSubscription || $canRegisterPilotStore))
         <form method="post" action="{{ route('saas.workspace.connections.botble.add', $workspace->public_id) }}">@csrf
             <div class="form-field"><label for="store_name">Store name</label><input id="store_name" name="name" placeholder="My Botble Shop" maxlength="150" required value="{{ old('name') }}">@error('name')<span class="error">{{ $message }}</span>@enderror</div>
-            <div class="form-field"><label for="store_url">Store URL</label><input id="store_url" name="base_url" type="url" placeholder="https://shop.example.com" maxlength="255" required value="{{ old('base_url') }}">@error('base_url')<span class="error" role="alert">{{ $message }}</span>@enderror</div>
+            <div class="form-field"><label for="store_url">Store URL</label><input id="store_url" name="base_url" type="url" placeholder="https://shop.example.com" maxlength="255" required value="{{ old('base_url', !$activeSubscription && $canRegisterPilotStore ? 'https://sandbox.daystart.pk' : '') }}" @if(!$activeSubscription && $canRegisterPilotStore) readonly @endif>@error('base_url')<span class="error" role="alert">{{ $message }}</span>@enderror</div>
             <button type="submit" class="btn btn-primary">Register store for pairing</button>
         </form>
         @elseif($role !== 'owner')<p class="micro">Only workspace owners can register Botble stores.</p>
-        @else<p class="alert">Activate a plan before registering a store.</p>@endif
+        @else<p class="alert">Activate a plan before registering a store. The internal first-party pilot, if authorized server-side, is restricted to sandbox.daystart.pk.</p>@endif
+        @if(!$activeSubscription && $canRegisterPilotStore)
+        <p class="micro">Internal pilot: you may register only <strong>https://sandbox.daystart.pk</strong>. After registration, an administrator must pin the displayed Store ID in Data Pilot's private server configuration before you generate a pairing code.</p>
+        @endif
         <div style="margin-top:20px">
         @if(session('pairing_code'))
         <div class="alert ok">
@@ -46,7 +55,7 @@
                 @if($role === 'owner')
                     @if($store->status === 'connected')
                     <form method="post" action="{{ route('saas.workspace.connections.botble.revoke', ['workspace' => $workspace->public_id, 'store' => $store->id]) }}" style="margin-top:8px">@csrf<button class="btn btn-sm" type="submit">Revoke pairing</button></form>
-                    @elseif($activeSubscription)
+                    @elseif($activeSubscription || $pilot->allowsPairing($workspace, $store))
                     <form method="post" action="{{ route('saas.workspace.connections.botble.pair-code', ['workspace' => $workspace->public_id, 'store' => $store->id]) }}" style="margin-top:8px">@csrf<button class="btn btn-sm" type="submit">Generate one-time pairing code</button></form>
                     @endif
                     @if($store->status !== 'connected')
@@ -56,7 +65,7 @@
             </div>
         @empty<div class="empty">No Botble stores registered yet.</div>@endforelse
         </div>
-        <p class="micro mt">Only the actual Botble administrator should enter the pairing code. Paid workspace access is required; product publishing remains disabled.</p>
+        <p class="micro mt">Only an authorized Botble administrator should enter the pairing code. A paid plan or narrowly configured first-party staging pilot is required. Product publishing remains disabled.</p>
     </div>
 </div>
 @endsection
