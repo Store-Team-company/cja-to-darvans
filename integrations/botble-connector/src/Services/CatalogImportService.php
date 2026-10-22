@@ -22,8 +22,6 @@ class CatalogImportService
 {
     public function approve(IncomingDraft $incoming): array
     {
-        $this->assertCompatible();
-
         return DB::transaction(function () use ($incoming): array {
             $draft = IncomingDraft::query()->lockForUpdate()->findOrFail($incoming->getKey());
             $pair = ConnectorPairing::query()->lockForUpdate()->findOrFail($draft->pairing_id);
@@ -45,6 +43,8 @@ class CatalogImportService
                 || collect($payload['variants'] ?? [])->contains(fn ($v) => !empty($v['image']))) {
                 throw new RuntimeException('Image import is not enabled for this Botble version. Draft remains pending review.');
             }
+
+            $this->assertCompatible();
 
             $sourceId = (string) $payload['source_product_id'];
             $mapping = ProductMapping::query()
