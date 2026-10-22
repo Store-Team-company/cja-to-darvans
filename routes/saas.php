@@ -55,7 +55,7 @@ Route::prefix('app')->middleware([EnsureSaasEnabled::class])->name('saas.')->gro
                     Route::delete('/connections/cj', [SaasConnectionController::class, 'removeCj'])
                         ->middleware('throttle:6,1')->name('connections.cj.remove');
                     Route::post('/connections/botble', [SaasConnectionController::class, 'addStore'])
-                        ->middleware([EnsureSaasEntitlement::class.':connect_store', 'throttle:6,1'])
+                        ->middleware([EnsureSaasEntitlement::class.':manage_connection', 'throttle:6,1'])
                         ->name('connections.botble.add');
                     Route::delete('/connections/botble/{store}', [SaasConnectionController::class, 'removeStore'])
                         ->middleware('throttle:6,1')->name('connections.botble.remove');
