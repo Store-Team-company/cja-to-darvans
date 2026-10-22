@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Str;
 
 class SaasWorkspace extends Model
@@ -35,6 +36,11 @@ class SaasWorkspace extends Model
     public function stores(): HasMany
     {
         return $this->hasMany(SaasBotbleStore::class, 'workspace_id');
+    }
+
+    public function billing(): HasOne
+    {
+        return $this->hasOne(SaasWorkspaceBilling::class, 'workspace_id');
     }
 
     public function cjConnections(): HasMany
