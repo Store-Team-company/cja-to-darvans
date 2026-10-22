@@ -167,10 +167,8 @@ class SaasEmailOtpService
             return $fallbacks !== [] && count($fallbacks) === count(array_filter(
                 $fallbacks,
                 fn ($name) => is_string($name)
-                    && !in_array($name, ['log', 'array', 'failover'], true)
-                    && in_array((string) config('mail.mailers.'.$name.'.transport'), [
-                        'smtp', 'ses', 'ses-v2', 'postmark', 'mailgun', 'sendmail',
-                    ], true)
+                    && !in_array($name, ['log', 'array', 'failover', 'roundrobin'], true)
+                    && $this->isDeliveryCapableMailer($name)
             ));
         }
 
