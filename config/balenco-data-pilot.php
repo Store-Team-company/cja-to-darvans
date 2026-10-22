@@ -2,7 +2,7 @@
 
 return [
     'login_username' => env('BDP_LOGIN_USERNAME', 'admin'),
-    'login_password' => env('BDP_LOGIN_PASSWORD', 'change-this-password'),
+    'login_password' => env('BDP_LOGIN_PASSWORD', ''),
     'default_brand' => 'Balenco',
     'default_status' => 'published',
     'default_categories' => 'Women\'s Flats',
@@ -16,8 +16,8 @@ return [
 
     // CJA can connect to Data Pilot as if it were a WooCommerce store.
     // Use these values as Client Key / Client Secret in CJA.
-    'cja_consumer_key' => env('BDP_WC_CONSUMER_KEY', 'ck_balenco_data_pilot'),
-    'cja_consumer_secret' => env('BDP_WC_CONSUMER_SECRET', 'cs_balenco_data_pilot'),
+    'cja_consumer_key' => env('BDP_WC_CONSUMER_KEY', ''),
+    'cja_consumer_secret' => env('BDP_WC_CONSUMER_SECRET', ''),
 
     // Direct Shofy database push settings. Fill these in .env of the Data Pilot app.
     'shofy_db' => [
