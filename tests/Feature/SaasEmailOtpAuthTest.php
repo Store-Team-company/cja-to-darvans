@@ -72,7 +72,8 @@ class SaasEmailOtpAuthTest extends TestCase
             ->assertRedirect(route('saas.login'));
 
         $this->post(route('saas.otp.verify'), ['code' => $code])
-            ->assertRedirect(route('saas.home'));
+            // Honor the original intended workspace URL after authentication.
+            ->assertRedirect(route('saas.workspace.dashboard', $workspace->public_id));
         $this->assertAuthenticatedAs($user);
         $this->assertNotNull($user->fresh()->email_verified_at);
         $this->assertNotNull($challenge->fresh()->consumed_at);
