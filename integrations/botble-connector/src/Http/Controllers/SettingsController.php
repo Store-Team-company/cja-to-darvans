@@ -18,7 +18,7 @@ class SettingsController extends Controller
         return view('plugins/datapilot-connector::settings', [
             'pairing' => ConnectorPairing::query()->first(),
             'inboxCount' => \Illuminate\Support\Facades\DB::table('datapilot_connector_drafts')->count(),
-            'saasUrl' => (string) config('plugins.datapilot-connector.datapilot.saas_url', config('datapilot-connector.datapilot.saas_url', '')),
+            'saasUrl' => (string) config('datapilot-connector.saas_url', ''),
         ]);
     }
 
@@ -32,7 +32,7 @@ class SettingsController extends Controller
         if (ConnectorPairing::query()->where('status', 'paired')->exists()) {
             return back()->withErrors(['pairing' => 'Revoke the existing pairing before connecting to a different workspace.']);
         }
-        $url = trim((string) config('plugins.datapilot-connector.datapilot.saas_url', config('datapilot-connector.datapilot.saas_url', '')), '/');
+        $url = trim((string) config('datapilot-connector.saas_url', ''), '/');
         $site = rtrim(strtolower((string) config('app.url')), '/');
         if (!str_starts_with($url, 'https://') || !filter_var($url, FILTER_VALIDATE_URL)
             || !str_starts_with($site, 'https://') || !filter_var($site, FILTER_VALIDATE_URL)) {

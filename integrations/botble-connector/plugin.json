@@ -4,7 +4,7 @@
   "provider": "Botble\\DatapilotConnector\\Providers\\DatapilotConnectorServiceProvider",
   "author": "PrismaSell",
   "url": "https://prismasell.com",
-  "version": "0.1.0",
-  "description": "Connect a Botble eCommerce store to an authorized Data Pilot workspace; pairing and product sync are under development.",
+  "version": "0.2.0",
+  "description": "Connect a Botble eCommerce store to an authorized Data Pilot workspace; supports secure per-workspace pairing and stores authenticated incoming drafts for review.",
   "minimum_core_version": "7.3.0"
 }
