@@ -26,6 +26,14 @@ class BalencoCjaWooApiController extends Controller
         $key = (string) config('balenco-data-pilot.cja_consumer_key');
         $secret = (string) config('balenco-data-pilot.cja_consumer_secret');
 
+        // Never offer API credentials to an unauthenticated visitor.
+        if (! $request->session()->get('bdp_logged_in')) {
+            return redirect()->route('bdp.login.form');
+        }
+        if ($key === '' || $secret === '') {
+            return response()->json(['message' => 'Configure CJA credentials before connecting.'], 503);
+        }
+
         $payload = [
             'key_id' => 1,
             'user_id' => $userId ?: 'cja',
@@ -44,17 +52,17 @@ class BalencoCjaWooApiController extends Controller
             'status_code' => 200,
             'request_headers' => $this->safeHeaders($request),
             'request_body' => $this->safeRequestBody($request),
-            'response_body' => ['callback_url' => $callbackUrl, 'return_url' => $returnUrl, 'payload' => $payload],
+            'response_body' => ['authorization_requested' => true],
             'note' => 'WooCommerce auth page opened by CJA Default connection.',
         ]);
 
-        if ($callbackUrl === '') {
-            return response()->json([
-                'code' => 'missing_callback_url',
-                'message' => 'Missing callback_url. Balenco Data Pilot WooCommerce auth endpoint is ready.',
-                'data' => $payload,
-            ], 200);
+        if ($callbackUrl === '' || ! $this->isSafeCjaCallback($callbackUrl)) {
+            return response()->json(['message' => 'A valid HTTPS CJ callback URL is required.'], 422);
         }
+        if ($returnUrl !== '' && ! $this->isSafeCjaCallback($returnUrl)) {
+            return response()->json(['message' => 'Invalid CJ return URL.'], 422);
+        }
+        $request->session()->put('bdp_wc_auth', ['callback' => $callbackUrl, 'return' => $returnUrl, 'scope' => $scope, 'user' => $userId]);
 
         $host = $request->getHost();
         $siteUrl = 'https://' . $host;
@@ -104,8 +112,7 @@ class BalencoCjaWooApiController extends Controller
             {$inputs}
             <button id="bdp-approve-btn" class="btn" type="submit">Approve Connection</button>
         </form>
-        <p class="small">Callback: {$callbackUrl}</p>
-        <a class="secondary" href="{$returnUrl}">Return without approving</a>
+        <p class="small">Only approve a connection you initiated inside CJ Dropshipping.</p>
     </div>
     <script>
         document.getElementById('bdp-auth-form').addEventListener('submit', function () {
@@ -124,8 +131,18 @@ HTML;
 
     public function wcAuthorizeApprove(Request $request)
     {
-        $callbackUrl = (string) $request->input('callback_url', '');
-        $returnUrl = (string) $request->input('return_url', '');
+        if (! $request->session()->get('bdp_logged_in')) {
+            abort(403, 'Sign in to approve a CJA connection.');
+        }
+        $state = $request->session()->pull('bdp_wc_auth');
+        if (! is_array($state) || ! hash_equals((string) ($state['callback'] ?? ''), (string) $request->input('callback_url', ''))) {
+            abort(403, 'Authorization request expired or invalid.');
+        }
+        $callbackUrl = (string) ($state['callback'] ?? '');
+        $returnUrl = (string) ($state['return'] ?? '');
+        if (! $this->isSafeCjaCallback($callbackUrl) || ($returnUrl !== '' && ! $this->isSafeCjaCallback($returnUrl))) {
+            abort(422, 'Invalid CJ callback destination.');
+        }
         $scope = (string) $request->input('scope', 'read_write');
         $userId = (string) $request->input('user_id', 'cja');
 
@@ -186,13 +203,7 @@ HTML;
             'request_headers' => $this->safeHeaders($request),
             'request_body' => $this->safeRequestBody($request),
             'response_body' => [
-                'callback_url' => $callbackUrl,
-                'return_url' => $returnUrl,
-                'final_return_url' => $finalReturnUrl,
-                'payload_sent_to_cja' => $payload,
                 'cja_callback_status' => $callbackStatus,
-                'cja_callback_body' => $callbackBody,
-                'cja_callback_error' => $callbackError,
                 'cja_callback_success' => $callbackSuccess,
             ],
             'note' => 'Posted exact WooCommerce WC-Auth payload to CJA callback and redirected to return_url.',
@@ -251,7 +262,7 @@ HTML;
             }
 
             if ($method === 'GET' && $endpoint === 'products') {
-                $products = BdpProduct::query()->latest('id')->limit((int) $request->query('per_page', 20))->get();
+                $products = BdpProduct::query()->latest('id')->limit(max(1, min(100, (int) $request->query('per_page', 20))))->get();
                 return $this->respond($request, $endpoint, 200, $products->map(fn (BdpProduct $p) => $this->wooProductResponse($p))->values()->all(), true, 'Product list.');
             }
 
@@ -596,7 +607,7 @@ HTML;
         $expectedSecret = (string) config('balenco-data-pilot.cja_consumer_secret');
 
         if ($expectedKey === '' || $expectedSecret === '') {
-            return true;
+            return false;
         }
 
         // WooCommerce integrations may authenticate in different ways:
@@ -635,11 +646,26 @@ HTML;
 
         // OAuth-signed requests do not send consumer_secret directly. For CJA connection
         // testing we accept matching oauth_consumer_key and log the full request.
+        // An OAuth consumer key alone is not authentication. Never accept an
+        // unverified signature as proof of possession of the consumer secret.
         if ($request->has('oauth_signature')) {
-            return hash_equals($expectedKey, $key);
+            return false;
         }
 
         return hash_equals($expectedKey, $key) && hash_equals($expectedSecret, $secret);
+    }
+
+    private function isSafeCjaCallback(string $url): bool
+    {
+        $parts = parse_url($url);
+        if (! is_array($parts) || strtolower((string) ($parts['scheme'] ?? '')) !== 'https') {
+            return false;
+        }
+        $host = strtolower(rtrim((string) ($parts['host'] ?? ''), '.'));
+        if (isset($parts['user'], $parts['pass']) || isset($parts['port'])) {
+            return false;
+        }
+        return $host === 'cjdropshipping.com' || str_ends_with($host, '.cjdropshipping.com');
     }
 
     private function basicAuth(Request $request): array
@@ -684,14 +710,18 @@ HTML;
     private function safeHeaders(Request $request): array
     {
         $headers = $request->headers->all();
-        unset($headers['authorization']);
+        foreach (['authorization', 'cookie', 'set-cookie', 'x-api-key', 'x-cj-access-token'] as $sensitive) {
+            unset($headers[$sensitive]);
+        }
         return $headers;
     }
 
     private function safeRequestBody(Request $request): array
     {
         $data = $request->all();
-        unset($data['consumer_secret'], $data['client_secret']);
+        foreach (['consumer_secret', 'client_secret', 'consumer_key', 'client_key', 'oauth_signature', 'oauth_consumer_key', 'api_key', 'access_token', 'refresh_token', '_token', 'callback_url', 'return_url'] as $sensitive) {
+            unset($data[$sensitive]);
+        }
         return $data;
     }
 }
