@@ -36,12 +36,7 @@ class BdpCategoryMappingController extends Controller
 
         BdpCategoryMapping::updateOrCreate(
             ['source_category' => trim($data['source_category'])],
-            [
-                'balenco_category_id' => $category->balenco_category_id,
-                'balenco_category_name' => $category->name,
-                'balenco_category_path' => $category->path ?: $category->name,
-                'notes' => $data['notes'] ?? null,
-            ]
+            $this->mappingAttributes($category, $data['notes'] ?? null)
         );
 
         return back()->with('success', 'Category mapping saved.');
@@ -65,13 +60,10 @@ class BdpCategoryMappingController extends Controller
             });
 
             if ($best) {
-                BdpCategoryMapping::create([
-                    'source_category' => $sourceCategory,
-                    'balenco_category_id' => $best->balenco_category_id,
-                    'balenco_category_name' => $best->name,
-                    'balenco_category_path' => $best->path ?: $best->name,
-                    'notes' => 'Auto-mapped by similar category name.',
-                ]);
+                BdpCategoryMapping::create(array_merge(
+                    ['source_category' => $sourceCategory],
+                    $this->mappingAttributes($best, 'Auto-mapped by similar category name.')
+                ));
                 $created++;
             }
         }
@@ -133,6 +125,28 @@ class BdpCategoryMappingController extends Controller
                 'No saved category mappings were changed.'
             );
         }
+    }
+
+    /**
+     * Older installations created bdp_category_mappings without optional
+     * path/notes columns. Keep existing stores fully functional without a
+     * destructive schema migration. Newer schemas retain rich metadata.
+     */
+    private function mappingAttributes(BdpBalencoCategory $category, ?string $notes): array
+    {
+        $attributes = [
+            'balenco_category_id' => $category->balenco_category_id,
+            'balenco_category_name' => $category->name,
+        ];
+
+        if (Schema::hasColumn('bdp_category_mappings', 'balenco_category_path')) {
+            $attributes['balenco_category_path'] = $category->path ?: $category->name;
+        }
+        if (Schema::hasColumn('bdp_category_mappings', 'notes')) {
+            $attributes['notes'] = $notes;
+        }
+
+        return $attributes;
     }
 
     private function balencoCategories()
