@@ -72,7 +72,10 @@ jobs:
       - name: Build safe UI-only SiteGround update
         run: php scripts/build-siteground-ui-update.php
       - name: Verify safe SSH repair deployer
-        run: php scripts/verify-ui-category-deployer.php
+        run: |
+          # PR checkouts are detached; give the smoke test its expected reviewed branch name.
+          git switch -c feature/datapilot-ui-category-repair-20261022
+          php scripts/verify-ui-category-deployer.php
       - name: Build and smoke-check incremental SaaS update
         run: |
           php scripts/build-siteground-saas-update.php
