@@ -130,3 +130,27 @@ remain mandatory):
 
 Never reuse the example idempotency key in a real integration. No real CJ
 products, customers, or Botble data have been transferred by this draft.
+
+## v0.3.1 native Botble administration and guided pairing
+
+Replaces the standalone HTML connector page with native Botble admin chrome,
+preserving the existing `/admin/data-pilot/connector` URL and pairing protocol.
+Incoming Products also uses the native admin layout. This is a UI / pairing
+usability release, not automatic catalog publication or a SaaS billing bypass.
+
+1. Sign in at `https://openai.duasbyfk.pk/app`.
+2. Go to Workspace → Connections and register the exact HTTPS URL
+   `https://sandbox.daystart.pk` (not a MySQL hostname).
+3. Generate a 10-minute pairing code in Data Pilot. This requires a verified
+   workspace, owner access and an active permitted entitlement.
+4. Enter the provided Workspace UUID, Store UUID and one-time code in the
+   Botble Connector admin page.
+5. Signed drafts are still disabled by default, as are native catalog writes.
+
+The currently deployed Data Pilot instance may have billing/registration disabled,
+in which case the **server must be configured and authorized first**. Do not
+invent UUIDs or disable any security checks to force pairing.
+
+The native admin layout follows Botble's
+`BaseHelper::getAdminMasterLayoutTemplate()`; a Botble-version runtime test
+on a backed-up staging environment is still required.
