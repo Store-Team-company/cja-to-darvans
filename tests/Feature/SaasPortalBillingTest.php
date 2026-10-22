@@ -492,6 +492,46 @@ class SaasPortalBillingTest extends TestCase
         $this->assertDatabaseHas('saas_botble_stores', ['id' => $store->id]);
     }
 
+    public function test_signup_normalizes_email_and_rejects_case_variant_duplicates(): void
+    {
+        config()->set('saas.registration_enabled', true);
+        \Illuminate\Support\Facades\Notification::fake();
+        $this->post(route('saas.register.submit'), [
+            'name' => 'Store Owner', 'workspace_name' => 'Example Store',
+            'email' => 'Owner@Example.Test',
+            'password' => 'StrongPasswordTest123',
+            'password_confirmation' => 'StrongPasswordTest123',
+        ])->assertRedirect(route('verification.notice'));
+
+        $this->assertDatabaseHas('users', ['email' => 'owner@example.test']);
+        $this->post(route('saas.register.submit'), [
+            'name' => 'Second Owner', 'workspace_name' => 'Second Store',
+            'email' => 'OWNER@EXAMPLE.TEST',
+            'password' => 'StrongPasswordTest123',
+            'password_confirmation' => 'StrongPasswordTest123',
+        ])->assertSessionHasErrors('email');
+        $this->assertDatabaseCount('users', 1);
+    }
+
+    public function test_password_reset_replaces_password_without_losing_workspace_membership(): void
+    {
+        [$owner, $workspace] = $this->workspace();
+        $token = \Illuminate\Support\Facades\Password::createToken($owner);
+        $this->post(route('saas.password.update'), [
+            'token' => $token,
+            'email' => strtoupper($owner->email),
+            'password' => 'NewExamplePassWORD123',
+            'password_confirmation' => 'NewExamplePassWORD123',
+        ])->assertRedirect(route('saas.login'));
+
+        $this->assertTrue(\Illuminate\Support\Facades\Hash::check(
+            'NewExamplePassWORD123', $owner->fresh()->password
+        ));
+        $this->assertDatabaseHas('saas_workspace_memberships', [
+            'workspace_id' => $workspace->id, 'user_id' => $owner->id, 'status' => 'active',
+        ]);
+    }
+
     public function test_reset_pages_exist_for_customers(): void
     {
         $this->get(route('saas.password.request'))->assertOk()->assertSee('Forgot your password');
