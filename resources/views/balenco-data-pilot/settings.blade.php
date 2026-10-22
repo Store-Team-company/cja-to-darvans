@@ -4,6 +4,32 @@
 
 @section('content')
 
+{{-- Read-only environment diagnostics. Passwords and tokens are never displayed. --}}
+<div class="bdp-card" style="padding:20px;margin-bottom:20px;border:1px solid #e3e9f2;border-radius:13px;background:#fff;">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px">
+        <div>
+            <h2 style="margin:0 0 5px">Installation &amp; System</h2>
+            <p style="margin:0;color:#64748b">SiteGround readiness and configuration status. Sensitive credentials are only stored in the private application folder.</p>
+        </div>
+        <span style="font-weight:750;color:#177455">Admin access required</span>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-top:16px">
+        <div style="padding:12px;background:#f8fafc;border-radius:10px"><small>Application URL</small><strong style="display:block;word-break:break-word">{{ config('app.url') }}</strong></div>
+        <div style="padding:12px;background:#f8fafc;border-radius:10px"><small>PHP version</small><strong style="display:block">{{ PHP_VERSION }}</strong></div>
+        <div style="padding:12px;background:#f8fafc;border-radius:10px"><small>Database driver</small><strong style="display:block">{{ config('database.default') }}</strong></div>
+        <div style="padding:12px;background:#f8fafc;border-radius:10px"><small>Queue driver</small><strong style="display:block">{{ config('queue.default') }}</strong></div>
+        <div style="padding:12px;background:#f8fafc;border-radius:10px"><small>Installer status</small><strong style="display:block">{{ file_exists(storage_path('app/.siteground-installed')) ? 'Completed and locked' : 'Manual / existing deployment' }}</strong></div>
+        <div style="padding:12px;background:#f8fafc;border-radius:10px"><small>Storage writable</small><strong style="display:block">{{ is_writable(storage_path('app')) ? 'Ready' : 'Check permissions' }}</strong></div>
+    </div>
+    <p style="margin:13px 0 8px;color:#64748b;font-size:13px">First-time setup is handled by the protected SiteGround installation wizard. For normal administration use the options below.</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <a class="bdp-btn light" href="{{ route('bdp.cj.settings') }}">Configure CJ API</a>
+        <a class="bdp-btn light" href="{{ route('bdp.cj.import') }}">Import CJ products</a>
+        <a class="bdp-btn light" href="{{ route('bdp.profile') }}">Change admin password</a>
+    </div>
+</div>
+
+
 {{-- BDP_CONNECTED_STORE_PERSIST_DISPLAY_FIX_START --}}
 @php
     $bdpStoreSettingValue = function ($keys, $default = '') {
