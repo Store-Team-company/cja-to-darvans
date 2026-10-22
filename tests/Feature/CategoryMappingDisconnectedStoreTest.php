@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\BdpBalencoCategory;
 use App\Models\BdpCategoryMapping;
+use App\Models\BdpProduct;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -49,7 +50,6 @@ class CategoryMappingDisconnectedStoreTest extends TestCase
             'source_category' => 'Pillows',
             'balenco_category_id' => (string) $cached->balenco_category_id,
             'balenco_category_name' => $cached->name,
-            'balenco_category_path' => $cached->path,
         ]);
 
         $this->asLegacyAdmin()
@@ -71,6 +71,58 @@ class CategoryMappingDisconnectedStoreTest extends TestCase
             ->assertOk()
             ->assertSee('Home Textiles')
             ->assertSee('Pillows');
+    }
+
+    public function test_save_category_mapping_works_on_the_original_legacy_table(): void
+    {
+        BdpBalencoCategory::create([
+            'balenco_category_id' => 777,
+            'name' => 'Bedding',
+            'path' => 'Home > Bedding',
+        ]);
+
+        $this->asLegacyAdmin()
+            ->from(route('bdp.categories.mapping'))
+            ->post(route('bdp.categories.mapping.store'), [
+                'source_category' => 'Pillows',
+                'balenco_category_id' => 777,
+            ])
+            ->assertRedirect(route('bdp.categories.mapping'))
+            ->assertSessionHas('success');
+
+        $this->assertDatabaseHas('bdp_category_mappings', [
+            'source_category' => 'Pillows',
+            'balenco_category_id' => 777,
+            'balenco_category_name' => 'Bedding',
+        ]);
+    }
+
+    public function test_auto_map_supports_the_original_legacy_table(): void
+    {
+        BdpProduct::create([
+            'source' => 'cj_api',
+            'source_id' => 'cj-cases-123',
+            'name' => 'Pillowcase Set',
+            'sku' => 'PILLOW-CASE-01',
+            'categories' => 'Home > Pillowcases',
+            'status' => 'draft',
+        ]);
+        BdpBalencoCategory::create([
+            'balenco_category_id' => 778,
+            'name' => 'Pillowcases',
+            'path' => 'Bedding > Pillowcases',
+        ]);
+
+        $this->asLegacyAdmin()
+            ->from(route('bdp.categories.mapping'))
+            ->post(route('bdp.categories.mapping.auto'))
+            ->assertRedirect(route('bdp.categories.mapping'))
+            ->assertSessionHas('success');
+
+        $this->assertDatabaseHas('bdp_category_mappings', [
+            'source_category' => 'Home > Pillowcases',
+            'balenco_category_id' => 778,
+        ]);
     }
 
     public function test_dashboard_authentication_is_intact_and_queue_remains_a_menu_link(): void
