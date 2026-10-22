@@ -29,6 +29,9 @@ class SaasAuthController extends Controller
     {
         abort_unless(config('saas.registration_enabled', false), 404);
 
+        // Unique-email validation must use the same normalized value that
+        // is saved, including on case-sensitive SQLite/test databases.
+        $request->merge(['email' => mb_strtolower(trim((string) $request->input('email', '')))]);
         $data = $request->validate([
             'name' => ['required', 'string', 'max:100'],
             'workspace_name' => ['required', 'string', 'min:2', 'max:150'],
