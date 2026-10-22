@@ -22,19 +22,11 @@ Route::prefix('app')->middleware([EnsureSaasEnabled::class])->name('saas.')->gro
     Route::middleware('auth')->group(function () {
         Route::post('/logout', [SaasAuthController::class, 'logout'])->name('logout');
 
-        Route::get('/email/verify', fn () => view('saas.auth.verify-email'))
-            ->name('verification.notice');
         Route::post('/email/verification-notification', function (Request $request) {
             $request->user()->sendEmailVerificationNotification();
 
             return back()->with('status', 'verification-link-sent');
         })->middleware('throttle:6,1')->name('verification.send');
-
-        Route::get('/email/verify/{id}/{hash}', function (EmailVerificationRequest $request) {
-            $request->fulfill();
-
-            return redirect()->route('saas.home');
-        })->middleware(['signed', 'throttle:6,1'])->name('verification.verify');
 
         Route::middleware('verified')->group(function () {
             Route::get('/', [SaasAuthController::class, 'home'])->name('home');
@@ -43,4 +35,20 @@ Route::prefix('app')->middleware([EnsureSaasEnabled::class])->name('saas.')->gro
                 ->name('workspace.dashboard');
         });
     });
+});
+
+/*
+ * Laravel's verified middleware and VerifyEmail notification use the
+ * global names verification.notice and verification.verify. Keep them
+ * separate from the saas.* group so signed email URLs resolve properly.
+ */
+Route::middleware([EnsureSaasEnabled::class, 'auth'])->group(function () {
+    Route::get('/app/email/verify', fn () => view('saas.auth.verify-email'))
+        ->name('verification.notice');
+
+    Route::get('/app/email/verify/{id}/{hash}', function (EmailVerificationRequest $request) {
+        $request->fulfill();
+
+        return redirect()->route('saas.home');
+    })->middleware(['signed', 'throttle:6,1'])->name('verification.verify');
 });

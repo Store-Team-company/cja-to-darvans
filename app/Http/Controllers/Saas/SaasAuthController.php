@@ -51,7 +51,7 @@ class SaasAuthController extends Controller
         Auth::login($user);
         $request->session()->regenerate();
 
-        return redirect()->route('saas.verification.notice');
+        return redirect()->route('verification.notice');
     }
 
     public function showLogin(): View

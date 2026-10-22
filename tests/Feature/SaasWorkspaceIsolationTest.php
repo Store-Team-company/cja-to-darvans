@@ -70,7 +70,7 @@ class SaasWorkspaceIsolationTest extends TestCase
             'email' => 'merchant@example.test',
             'password' => 'SafePasswordExample123',
             'password_confirmation' => 'SafePasswordExample123',
-        ])->assertRedirect(route('saas.verification.notice'));
+        ])->assertRedirect(route('verification.notice'));
 
         $user = User::where('email', 'merchant@example.test')->firstOrFail();
         $this->assertAuthenticatedAs($user);
@@ -82,7 +82,7 @@ class SaasWorkspaceIsolationTest extends TestCase
 
         $workspace = SaasWorkspace::firstOrFail();
         $this->get(route('saas.workspace.dashboard', ['workspace' => $workspace->public_id]))
-            ->assertRedirect(route('saas.verification.notice'));
+            ->assertRedirect(route('verification.notice'));
     }
 
     public function test_nonmembers_cannot_read_another_merchants_workspace(): void
