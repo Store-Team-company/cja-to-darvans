@@ -62,7 +62,7 @@
                 </div>
                 <div class="flex mt">
                     <button class="btn btn-primary" type="submit">Save changes</button>
-                    <a class="btn" href="{{ route('saas.workspace.products', $workspace->public_id) }}">Save & close later</a>
+                    <a class="btn" href="{{ route('saas.workspace.products', $workspace->public_id) }}">Back to My Products</a>
                 </div>
             </form>
         </div>
