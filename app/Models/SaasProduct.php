@@ -16,6 +16,10 @@ class SaasProduct extends Model
         'source_snapshot' => 'array',
         'selling_price_usd' => 'decimal:2',
         'merchant_edited_at' => 'datetime',
+        'sale_price_usd' => 'decimal:2',
+        'gallery_images' => 'array',
+        'source_variants' => 'array',
+        'cj_details_fetched_at' => 'datetime',
     ];
 
     public function workspace(): BelongsTo

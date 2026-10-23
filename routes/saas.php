@@ -61,6 +61,8 @@ Route::prefix('app')->middleware([EnsureSaasEnabled::class])->name('saas.')->gro
                     Route::get('/products/{product}/edit', [SaasProductEditorController::class, 'edit'])->name('products.edit');
                     Route::patch('/products/{product}', [SaasProductEditorController::class, 'update'])
                         ->middleware('throttle:15,1')->name('products.update');
+                    Route::post('/products/{product}/cj/details', [SaasProductEditorController::class, 'fetchCjDetails'])
+                        ->middleware('throttle:3,1')->name('products.cj.details');
                     Route::post('/products/cj/search', [SaasCjProductController::class, 'search'])
                         ->middleware('throttle:3,1')->name('products.cj.search');
                     Route::post('/products/cj/import', [SaasCjProductController::class, 'import'])
