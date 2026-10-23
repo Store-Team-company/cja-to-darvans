@@ -174,7 +174,6 @@ final class SaasCjFullProductDetailsTest extends TestCase
     {
         [$owner, $workspace, $product] = $this->fixture();
         [$other, $different] = $this->fixture();
-        Http::fake(['developers.cjdropshipping.com/*' => Http::response($this->data(), 200)]);
         $this->actingAs($other)->post($this->url($workspace, $product->id))->assertNotFound();
         $this->actingAs($other)->post($this->url($different, $product->id))->assertNotFound();
         Http::assertNothingSent();
