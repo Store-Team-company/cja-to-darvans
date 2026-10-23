@@ -50,7 +50,7 @@
 <div class="dp-connect">
     <div class="dp-hero">
         <div>
-            <h1>Data Pilot <span class="dp-muted">Connector v0.3.1</span></h1>
+            <h1>Data Pilot <span class="dp-muted">Connector v0.3.3</span></h1>
             <p class="dp-sub">Connect this Botble store securely and review incoming CJ products before catalog import.</p>
         </div>
         <span class="dp-pill {{ $isPaired ? 'on' : '' }}" role="status"><span class="dp-dot"></span>{{ $isPaired ? 'Paired' : 'Not connected' }}</span>
