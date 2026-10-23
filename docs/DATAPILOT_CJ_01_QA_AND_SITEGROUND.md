@@ -38,10 +38,14 @@ a successful request as the existing customer. The GitHub regression suite
 includes manually approved accounts with active/pending workspaces and
 Connections page GET. It proves only the test database path.
 
-After reproducing the 500, from the **private DataPilot installation**
-run:
-
-    php scripts/diagnose-siteground-cj01.php
+After reproducing the 500, inspect the private SiteGround Laravel/PHP
+logs to establish the precise exception class, file and line, and inspect
+the currently deployed `artisan --version`, customer auth middleware and
+migration status. `scripts/diagnose-siteground-cj01.php` is available in
+the **Git source**, but is not installed by this selective updater;
+do not assume it already exists in the private installed app. Run it only
+from a trusted checkout that has its own valid dependencies/configuration.
+Do not copy source `.env` or production credentials into Git.
 
 This reports *only* exception timestamps/classes and essential schema
 flags, not exception messages or secrets. If the latest class is still
@@ -84,8 +88,11 @@ Only after DBA backup and approved dry run:
       --target="$HOME/www/openai.duasbyfk.pk/data-pilot-app"
 
 This backs up the replaced files outside public_html, copies CJ-only
-services/model/controller/view/routes/config, runs ONE additive migration
-`2026_10_23_000006_add_saas_cj_auth_state.php`, and clears caches.
+services/model/controller/view/routes/config, runs TWO additive migrations
+`2026_10_23_000006_add_saas_cj_auth_state.php` and
+`2026_10_23_000007_guard_saas_cj_credential_revisions.php`, and clears
+caches. The second migration provides monotonic credential revisions and
+one-time verification-operation identity.
 It does NOT edit private .env, change Stripe plans, bypass subscriptions,
 change password auth, or install anything in Botble.
 
@@ -121,7 +128,16 @@ authentication. A failed response must not be called connected.
   no API key or access/refresh token in logs, HTML, JSON or session.
 - Password login, customer approval, tenant membership, suspended access,
   other workspace denial, viewer/importer denial, and admin legacy pages.
-- Key rotation clears previously saved tokens and requires new verification.
+- Key rotation (even saving an identical key) increments
+  `credential_revision` and clears `verification_attempt_id`, previously
+  saved tokens and last successful verification. An old HTTPS response
+  cannot mark the newer unverified revision connected.
+- Each outbound authentication reservation has a unique operation ID. A
+  superseded response cannot overwrite a newer successful verification or
+  downgrade it to Failed.
+- Disconnection invalidates the in-flight operation. A workspace suspended
+  or an owner revoked during the HTTP request cannot receive an old
+  successful response.
 - Disconnection removes encrypted credentials/tokens (local only); if
   full CJ token revocation is desired, it is a separate explicitly
   authorized operation.
