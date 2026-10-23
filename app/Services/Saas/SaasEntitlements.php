@@ -20,7 +20,7 @@ final class SaasEntitlements
 
     public function paidActive(SaasWorkspace $workspace): bool
     {
-        if (!config('saas.enabled') || !config('saas.billing_enabled') || $workspace->status !== 'active') {
+        if (!config('saas.enabled') || !config('saas.billing_enabled') || $workspace->status === 'suspended') {
             return false;
         }
 
