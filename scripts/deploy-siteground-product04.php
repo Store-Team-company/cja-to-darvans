@@ -44,6 +44,9 @@ $apply = in_array('--apply', $argv, true);
 if ($check === $apply) {
     product04Abort('Specify exactly one of --check or --apply');
 }
+if (!class_exists(\DOMDocument::class)) {
+    product04Abort('PHP DOM extension is required for secure rich HTML processing');
+}
 
 $source = realpath(dirname(__DIR__));
 $target = realpath($get('--target'));
