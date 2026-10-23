@@ -94,7 +94,7 @@ change password auth, or install anything in Botble.
 On DataPilot's PRIVATE .env only, after backups:
 
     SAAS_CJ_PILOT_ENABLED=true
-    SAAS_CJ_PILOT_WORKSPACE_ID=9099bc86-f068-4ce8-905a-7f9e983818bf
+    SAAS_CJ_PILOT_WORKSPACE_ID=YOUR_PRIVATE_WORKSPACE_UUID
 
 Keep `SAAS_REGISTRATION_ENABLED=false`, and preserve all Botble pilot
 settings independently. Pilot access requires workspace.status=`active`
