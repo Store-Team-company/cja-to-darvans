@@ -39,6 +39,7 @@ on:
       - 'scripts/diagnose-siteground-auth04.php'
       - 'docs/DATAPILOT_AUTH_04_SITEGROUND_RUNBOOK.md'
       - 'docs/DATAPILOT_BOTBLE_04_SANDBOX_PAIRING.md'
+      - 'docs/DATAPILOT_CJ_01_QA_AND_SITEGROUND.md'
       - 'scripts/verify-siteground-saas-02.php'
       - 'docs/SAAS_CUSTOMER_PORTAL_STRIPE_02.md'
       - 'docs/SITEGROUND_UI_UPDATE.md'
