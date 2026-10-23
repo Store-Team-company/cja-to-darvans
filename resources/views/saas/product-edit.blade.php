@@ -264,11 +264,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 toggle.textContent = 'Visual editor';
                 sourceMode = true;
             } else {
-                // Do not render manually entered HTML without a server-side scrub.
-                // Saving in source mode cleans it before it is rendered next time.
+                // Never throw away uncommitted HTML or render it before sanitization.
+                if (source.value !== canvas.innerHTML) {
+                    section.querySelector('.catalog-rich-footer').textContent =
+                        'Save the product to sanitize these HTML changes, then reopen to see the visual version.';
+                    return;
+                }
                 canvas.hidden = false;
                 source.hidden = true;
-                source.value = canvas.innerHTML;
                 toggle.textContent = 'HTML source';
                 sourceMode = false;
             }
