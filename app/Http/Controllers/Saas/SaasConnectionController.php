@@ -38,6 +38,10 @@ class SaasConnectionController extends Controller
             abort_unless($this->cjAuthorized($locked), 403);
 
             $connection = $locked->cjConnections()->firstOrNew([]);
+            // Increment even if the same key was entered: ciphertext/value equality
+            // cannot distinguish a newly saved credential revision.
+            $connection->credential_revision = ((int) $connection->credential_revision) + 1;
+            $connection->verification_attempt_id = null;
             $connection->api_key = trim($data['api_key']);
             $connection->access_token = null;
             $connection->refresh_token = null;
@@ -75,6 +79,10 @@ class SaasConnectionController extends Controller
             }
 
             $connection->last_auth_attempt_at = now();
+            // A unique reservation prevents an older response from replacing
+            // a newer successful verification, even for an identical API key.
+            $connection->verification_attempt_id = (string) \Illuminate\Support\Str::uuid();
+            $connection->status = 'pending_verification';
             $connection->save();
             $refresh = $connection->access_token
                 && $connection->access_token_expires_at
@@ -84,6 +92,8 @@ class SaasConnectionController extends Controller
 
             return [
                 'connection_id' => $connection->id,
+                'credential_revision' => (int) $connection->credential_revision,
+                'verification_attempt_id' => $connection->verification_attempt_id,
                 'api_key' => $connection->api_key,
                 'refresh_token' => $refresh ? $connection->refresh_token : null,
             ];
@@ -119,14 +129,22 @@ class SaasConnectionController extends Controller
             $lock->release();
         }
 
-        $updated = DB::transaction(function () use ($workspace, $reservation, $tokens, $problem): bool {
+        $requestUser = $request->user();
+        $updated = DB::transaction(function () use ($workspace, $reservation, $tokens, $problem, $requestUser): bool {
             $locked = SaasWorkspace::whereKey($workspace->id)->lockForUpdate()->firstOrFail();
             $connection = $locked->cjConnections()->lockForUpdate()->first();
             if (!$connection || $connection->id !== $reservation['connection_id']
                 || !$connection->api_key
-                || !hash_equals($reservation['api_key'], $connection->api_key)) {
-                return false; // Credential rotated/removed during remote request.
+                || (int) $connection->credential_revision !== $reservation['credential_revision']
+                || !is_string($connection->verification_attempt_id)
+                || !hash_equals($reservation['verification_attempt_id'], $connection->verification_attempt_id)
+                || !hash_equals($reservation['api_key'], $connection->api_key)
+                || $locked->status !== 'active'
+                || !$this->cjAuthorized($locked)
+                || !app(WorkspacePermissions::class)->allows($requestUser, $locked, 'manage_connections')) {
+                return false; // Superseded, disconnected, suspended or revoked.
             }
+            $connection->verification_attempt_id = null;
             if ($problem) {
                 $connection->status = 'failed';
                 $connection->last_error_code = $problem->reason;
@@ -161,6 +179,8 @@ class SaasConnectionController extends Controller
             $locked = SaasWorkspace::whereKey($workspace->id)->lockForUpdate()->firstOrFail();
             $connection = $locked->cjConnections()->lockForUpdate()->first();
             if ($connection) {
+                $connection->credential_revision = ((int) $connection->credential_revision) + 1;
+                $connection->verification_attempt_id = null;
                 $connection->api_key = null;
                 $connection->access_token = null;
                 $connection->refresh_token = null;
