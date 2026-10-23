@@ -146,3 +146,29 @@ jobs:
           path: dist/datapilot-connector-0.3.3.zip
           retention-days: 14
           if-no-files-found: error
+
+
+  botble_overlay:
+    name: Verified v0.3.2 to v0.3.3 Botble Inbox Overlay
+    needs: tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: zip, mbstring, dom, xml
+          coverage: none
+      - name: Build exact-content Botble inbox overlay
+        run: php scripts/build-botble-03c-overlay.php
+      - name: Verify read-only preflight, local customizations, protected files and full rollback
+        run: php scripts/verify-botble-03c-overlay.php
+      - name: Publish independently verifiable private overlay
+        uses: actions/upload-artifact@v4
+        with:
+          name: datapilot-botble-03c-overlay
+          path: dist/datapilot-botble-03c-overlay.zip
+          if-no-files-found: error
+          retention-days: 14
