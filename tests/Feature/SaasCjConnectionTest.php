@@ -173,6 +173,20 @@ class SaasCjConnectionTest extends TestCase
         $this->assertSame('failed', $workspace->cjConnections()->first()->status);
     }
 
+    public function test_cj_api_suspension_is_not_misreported_as_throttling(): void
+    {
+        [$owner, $workspace] = $this->fixture();
+        $this->save($owner, $workspace);
+        Http::fake(['developers.cjdropshipping.com/*' => Http::response([
+            'code' => 1600014, 'success' => false, 'result' => false,
+            'message' => self::SECRET,
+        ], 200)]);
+        $this->actingAs($owner)->post($this->endpoint($workspace, 'verify'))
+            ->assertSessionHasErrors('cj');
+        $this->assertSame('api_suspended', $workspace->cjConnections()->first()->last_error_code);
+        $this->assertSame('failed', $workspace->cjConnections()->first()->status);
+    }
+
     public function test_repeated_attempts_are_throttled_without_additional_cj_request(): void
     {
         [$owner, $workspace] = $this->fixture();
