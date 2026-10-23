@@ -62,7 +62,8 @@ final class SaasBotbleVariantDraftPayload
             $options[$option] = true;
 
             $rawImage = $sourceVariant['image'] ?? null;
-            if ($rawImage !== null && $rawImage !== '' && !$safe->safeUrl($rawImage)) {
+            if ($rawImage !== null && $rawImage !== ''
+                && (!is_string($rawImage) || !$safe->safeUrl($rawImage))) {
                 throw new SaasBotbleDeliveryException('unsafe_variant_image');
             }
 
@@ -109,7 +110,7 @@ final class SaasBotbleVariantDraftPayload
             'title' => (string) $product->title,
             'sku' => (string) $product->sku,
             'price' => $price,
-            'description' => trim(strip_tags((string) ($long ?: $product->description))),
+            'description' => mb_substr(trim(strip_tags((string) ($long ?: $product->description))), 0, 10000),
             'short_description_html' => $short ?: '',
             'long_description_html' => $long ?: '',
             'seo_title' => (string) ($product->seo_title ?? ''),
