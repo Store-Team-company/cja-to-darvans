@@ -60,7 +60,7 @@ Route::prefix('app')->middleware([EnsureSaasEnabled::class])->name('saas.')->gro
                         ->middleware([EnsureSaasEntitlement::class.':connect_cj', 'throttle:6,1'])
                         ->name('connections.cj.save');
                     Route::post('/connections/cj/verify', [SaasConnectionController::class, 'verifyCj'])
-                        ->middleware([EnsureSaasEntitlement::class.':connect_cj', 'throttle:2,1'])
+                        ->middleware([EnsureSaasEntitlement::class.':connect_cj', 'throttle:1,1'])
                         ->name('connections.cj.verify');
                     Route::delete('/connections/cj', [SaasConnectionController::class, 'removeCj'])
                         ->middleware('throttle:6,1')->name('connections.cj.remove');
