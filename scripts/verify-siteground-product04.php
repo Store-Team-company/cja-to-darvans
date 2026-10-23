@@ -57,6 +57,7 @@ PHP
 $replaced = [
     'app/Http/Controllers/Saas/SaasProductEditorController.php',
     'app/Models/SaasProduct.php',
+    'app/Models/SaasCjConnection.php',
     'resources/views/saas/product-edit.blade.php',
     'resources/views/saas/layout.blade.php',
     'routes/saas.php',
