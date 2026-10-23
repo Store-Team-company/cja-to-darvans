@@ -202,4 +202,30 @@ final class SaasAdminPlanGrantTest extends TestCase
         $this->assertDatabaseCount('saas_workspace_billing', 0);
         $this->assertDatabaseCount('saas_stripe_events', 0);
     }
+    public function test_complimentary_plan_displays_without_stripe_billing(): void
+    {
+        config()->set('saas.billing_enabled', false);
+        config()->set('saas.stripe_secret', '');
+        config()->set('saas.stripe_webhook_secret', '');
+        config()->set('saas.plans.starter.stripe_price_id', '');
+
+        [$owner, $workspace] = $this->fixture();
+        $this->grant($workspace)->assertRedirect()->assertSessionHas('success');
+
+        $entitlements = app(SaasEntitlements::class);
+        $this->assertTrue($entitlements->active($workspace));
+        $this->assertFalse($entitlements->paidActive($workspace));
+        $this->assertSame('complimentary', $entitlements->accessSource($workspace));
+
+        $this->actingAs($owner)->get(route('saas.workspace.billing', $workspace->public_id))
+            ->assertOk()
+            ->assertSee('Complimentary Starter access')
+            ->assertSee('Plan: <strong>Starter</strong>', false)
+            ->assertSee('Stripe billing is not enabled')
+            ->assertSee('Checkout not available yet');
+
+        $this->assertDatabaseCount('saas_workspace_billing', 0);
+        Http::assertNothingSent();
+    }
+
 }
