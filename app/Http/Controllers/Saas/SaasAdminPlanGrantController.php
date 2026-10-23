@@ -81,6 +81,7 @@ final class SaasAdminPlanGrantController extends Controller
 
     public function revoke(Request $request, SaasWorkspace $workspace): RedirectResponse
     {
+        abort_unless(config('saas.admin_grants_enabled'), 404);
         $data = $request->validate([
             'reason' => ['required', 'string', 'min:8', 'max:255'],
             'confirmation' => ['required', 'in:REVOKE'],
