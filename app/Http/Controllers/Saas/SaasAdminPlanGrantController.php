@@ -40,6 +40,7 @@ final class SaasAdminPlanGrantController extends Controller
 
     public function grant(Request $request, SaasWorkspace $workspace, SaasEntitlements $entitlements): RedirectResponse
     {
+        abort_unless(config('saas.admin_grants_enabled'), 404);
         $data = $request->validate([
             'plan' => ['required', 'string', Rule::in(array_keys(app(SaasPlanCatalog::class)->all()))],
             'days' => ['required', 'integer', 'min:1', 'max:90'],
