@@ -121,6 +121,9 @@ final class SaasAdminPlanGrantTest extends TestCase
 
     public function test_suspended_workspace_or_invalid_grant_data_never_grants_access(): void
     {
+        // Exercise several independent invalid payloads without triggering
+        // the production per-route admin throttle across repeated requests.
+        $this->withoutMiddleware(\Illuminate\Routing\Middleware\ThrottleRequests::class);
         [$user, $workspace] = $this->fixture();
         $workspace->forceFill(['status' => 'suspended'])->save();
         $this->grant($workspace)->assertStatus(422);
