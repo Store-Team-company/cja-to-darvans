@@ -9,6 +9,7 @@
 </div>
 @if(session('success'))<div class="bdp-alert success" role="status">{{ session('success') }}</div>@endif
 @if($errors->any())<div class="bdp-alert error" role="alert">{{ $errors->first() }}</div>@endif
+@if(config('saas.admin_grants_enabled'))
 <div class="bdp-card">
     <p>For complimentary, time-limited workspace access, open
         <a href="{{ route('bdp.saas.workspaces') }}">Workspace access grants</a>.
