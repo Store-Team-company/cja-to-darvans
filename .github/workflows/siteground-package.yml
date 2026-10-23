@@ -149,6 +149,10 @@ jobs:
         run: |
           git switch -c feature/datapilot-product-04-full-cj-details-editor
           php scripts/verify-siteground-product04.php
+      - name: Verify BOTBLE-PUBLISH-01A signed draft delivery installer
+        run: |
+          git switch -c feature/datapilot-botble-publish-01a-signed-draft-delivery
+          php scripts/verify-siteground-publish01a.php
       - name: Build and smoke-check incremental SaaS update
         run: |
           php scripts/build-siteground-saas-update.php
