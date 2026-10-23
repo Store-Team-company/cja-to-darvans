@@ -220,7 +220,13 @@ final class SaasCjCatalogBrowser
                 if ($existing && $existing->status !== 'draft') {
                     $skipped++;
                 } elseif ($existing) {
-                    $existing->fill($fields)->save();
+                    // A fresh CJ snapshot must never erase saved merchant edits.
+                    if ($existing->merchant_edited_at) {
+                        $existing->source_snapshot = $fields['source_snapshot'];
+                    } else {
+                        $existing->fill($fields);
+                    }
+                    $existing->save();
                     $updated++;
                 } elseif ($total < $max) {
                     $locked->products()->create(['cj_product_id' => $id, 'status' => 'draft'] + $fields);
