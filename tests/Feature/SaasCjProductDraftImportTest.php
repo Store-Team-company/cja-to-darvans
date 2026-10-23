@@ -110,7 +110,7 @@ final class SaasCjProductDraftImportTest extends TestCase
         $key = $this->previewKey($response);
         $this->assertMatchesRegularExpression('/^[a-f0-9]{40}$/D', $key);
         $this->assertDatabaseCount('saas_products', 0);
-        $this->actingAs($owner)->get(route('saas.workspace.products', [
+        $this->actingAs($owner)->get(route('saas.workspace.products.cj', [
             'workspace' => $workspace->public_id, 'cj_preview' => $key,
         ]))->assertOk()->assertSee('Safe test tablecloth')->assertSee('Second draft')
             ->assertSee('Import selected as drafts')
@@ -171,7 +171,7 @@ final class SaasCjProductDraftImportTest extends TestCase
         $workspace->members()->attach($manager->id, ['role' => 'manager', 'status' => 'active']);
         Http::fake(['developers.cjdropshipping.com/*' => Http::response($this->success([$this->product()]), 200)]);
         $key = $this->previewKey($this->search($owner, $workspace));
-        $this->actingAs($manager)->get(route('saas.workspace.products', [
+        $this->actingAs($manager)->get(route('saas.workspace.products.cj', [
             'workspace' => $workspace->public_id, 'cj_preview' => $key,
         ]))->assertOk()->assertDontSee('Safe test tablecloth');
         $this->import($manager, $workspace, $key, ['CJ-PRODUCT-001'])->assertForbidden();
