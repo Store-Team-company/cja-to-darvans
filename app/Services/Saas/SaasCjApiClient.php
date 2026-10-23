@@ -51,8 +51,12 @@ final class SaasCjApiClient
         if (!is_array($body)) {
             throw new SaasCjApiException('invalid_response');
         }
-        if (($body['code'] ?? null) === 429 || in_array((int) ($body['code'] ?? 0), [1600008, 1600014], true)) {
+        if ((int) ($body['code'] ?? 0) === 429
+            || in_array((int) ($body['code'] ?? 0), [1600200, 1600201], true)) {
             throw new SaasCjApiException('rate_limited');
+        }
+        if ((int) ($body['code'] ?? 0) === 1600014) {
+            throw new SaasCjApiException('api_suspended');
         }
         if (($body['success'] ?? false) !== true
             || ($body['result'] ?? false) !== true
