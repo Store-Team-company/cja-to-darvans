@@ -38,6 +38,12 @@ class CatalogImportService
                 || (string) ($payload['source_product_id'] ?? '') !== $draft->source_product_id) {
                 throw new RuntimeException('Invalid or mismatched source payload.');
             }
+            // Signed protocol-v2 payloads remain strictly review-only until
+            // native Botble variation + media compatibility tests are approved.
+            // This guard is independent of the generic catalog-import flag.
+            if (($payload['schema_version'] ?? null) === 2) {
+                throw new RuntimeException('Native v2 catalog import is not approved for this Botble version.');
+            }
             // Never silently discard images or mark a partially imported catalog item synced.
             if (!empty($payload['images']) || !empty($payload['image'])
                 || collect($payload['variants'] ?? [])->contains(fn ($v) => !empty($v['image']))) {

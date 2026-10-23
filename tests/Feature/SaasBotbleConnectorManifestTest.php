@@ -13,7 +13,7 @@ class SaasBotbleConnectorManifestTest extends TestCase
 
         $this->assertSame('Botble\\DatapilotConnector\\', $manifest['namespace']);
         $this->assertSame('Botble\\DatapilotConnector\\Providers\\DatapilotConnectorServiceProvider', $manifest['provider']);
-        $this->assertSame('0.3.1', $manifest['version']);
+        $this->assertSame('0.3.3', $manifest['version']);
 
         $routes = (string) file_get_contents($root.'/routes/web.php');
         $this->assertStringContainsString("'middleware' => 'auth'", $routes);
