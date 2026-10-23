@@ -24,9 +24,15 @@ class SaasConnectionController extends Controller
         app(WorkspacePermissions::class)->authorize($request->user(), $workspace, 'manage_connections');
         abort_unless($this->cjAuthorized($workspace), 403);
 
-        $data = $request->validate([
+        // Never flash an API key to Laravel's old-input session on validation
+        // failure (it is not in Laravel's default password exclusion list).
+        $validator = \Illuminate\Support\Facades\Validator::make($request->all(), [
             'api_key' => ['required', 'string', 'min:16', 'max:200'],
         ]);
+        if ($validator->fails()) {
+            return back()->withErrors($validator)->withInput($request->except('api_key'));
+        }
+        $data = $validator->validated();
         DB::transaction(function () use ($workspace, $data): void {
             $locked = SaasWorkspace::whereKey($workspace->id)->lockForUpdate()->firstOrFail();
             abort_unless($this->cjAuthorized($locked), 403);
