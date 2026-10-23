@@ -211,7 +211,8 @@ foreach ($manifestBaseline as $file) {
         && hash_file('sha256', $backup.'/'.$file) === $initialHashes[$target.'/'.$file],
         'Original manifest file not backed up before installation: '.$file);
 }
-cj01Assert(file_get_contents($target.'/routes/api.php') === file_get_contents($backup.'/../data-pilot-app/routes/api.php'),
+cj01Assert(hash_file('sha256', $target.'/routes/api.php')
+    === $initialHashes[$target.'/routes/api.php'],
     'Out-of-manifest API route changed');
 cj01Assert($initialHashes[$target.'/private-db-sentinel.txt']
     === hash_file('sha256', $target.'/private-db-sentinel.txt'), 'Database sentinel changed');
