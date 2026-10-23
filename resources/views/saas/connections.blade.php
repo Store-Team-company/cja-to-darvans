@@ -30,13 +30,13 @@
         @if($canConnectCj)
             <form method="post" action="{{ route('saas.workspace.connections.cj.save', $workspace->public_id) }}" autocomplete="off">@csrf
                 <div class="form-field">
-                    <label for="cj_api_key">{{ $cjConnection && $cjConnection->api_key ? 'Replace CJ API key' : 'CJ API key' }}</label>
+                    <label for="cj_api_key">{{ $cjConnection && $cjConnection->getRawOriginal('api_key') ? 'Replace CJ API key' : 'CJ API key' }}</label>
                     <input type="password" id="cj_api_key" name="api_key" autocomplete="new-password" required minlength="16" maxlength="200" placeholder="Paste CJ API key">
                     @error('api_key')<span class="error" role="alert">{{ $message }}</span>@enderror
                 </div>
                 <button class="btn btn-primary" type="submit">Save encrypted key</button>
             </form>
-            @if($cjConnection && $cjConnection->api_key)
+            @if($cjConnection && $cjConnection->getRawOriginal('api_key'))
                 <form method="post" action="{{ route('saas.workspace.connections.cj.verify', $workspace->public_id) }}" style="margin-top:12px">@csrf
                     <button class="btn btn-primary" type="submit">Test connection</button>
                 </form>
