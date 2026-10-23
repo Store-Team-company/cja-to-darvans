@@ -174,7 +174,7 @@ final class SaasCjProductDraftImportTest extends TestCase
         $this->actingAs($manager)->get(route('saas.workspace.products', [
             'workspace' => $workspace->public_id, 'cj_preview' => $key,
         ]))->assertOk()->assertDontSee('Safe test tablecloth');
-        $this->import($manager, $workspace, $key, ['CJ-PRODUCT-001'])->assertSessionHasErrors('cj_product');
+        $this->import($manager, $workspace, $key, ['CJ-PRODUCT-001'])->assertForbidden();
         $this->assertDatabaseCount('saas_products', 0);
     }
 
