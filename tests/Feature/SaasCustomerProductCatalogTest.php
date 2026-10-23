@@ -134,7 +134,7 @@ final class SaasCustomerProductCatalogTest extends TestCase
         $product->forceFill(['status' => 'draft'])->save();
 
         $workspace->forceFill(['status' => 'suspended'])->save();
-        $this->actingAs($owner)->get($edit)->assertForbidden();
+        $this->actingAs($owner)->get($edit)->assertNotFound();
     }
 
     public function test_invalid_price_or_unreasonably_long_fields_never_change_product(): void
