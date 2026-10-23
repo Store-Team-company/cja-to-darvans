@@ -214,15 +214,30 @@
                             @if($sent->remote_draft_id) · Botble inbox #{{ $sent->remote_draft_id }} @endif
                             · Attempts: {{ $sent->attempts }}</p>
                     @endif
-                    @if($canStage)
+                    @if($canStage && (count($variants) === 0 || config('saas.botble_variant_drafts_enabled', false)))
                     <form method="post" action="{{ route('saas.workspace.products.botble.stage', [
                             'workspace'=>$workspace->public_id,'product'=>$product->id,'store'=>$store->id
                         ]) }}" onsubmit="return confirm('Send this reviewed product to the Botble private Incoming Products inbox? This does not publish it.');">
                         @csrf
-                        <button type="submit" class="btn btn-primary">Stage for Botble review</button>
+                        @if(count($variants) > 0)
+                            <div class="catalog-note" style="margin:12px 0">
+                                <strong>{{ count($variants) }} supplier variations</strong> will be staged together.
+                                Every SKU and complete supplier option label is preserved under "CJ Option" without guessing Color or Size.
+                                The same retail price will be used for every variation; supplier costs and unknown stock will not be used.
+                                <label style="display:flex;gap:10px;align-items:start;margin-top:10px">
+                                    <input type="checkbox" name="confirm_uniform_variant_price" value="1" required>
+                                    <span>I reviewed the selling price and authorize the <strong>same selling price for all {{ count($variants) }} variations</strong>. I understand this only stages a private Botble inbox draft.</span>
+                                </label>
+                            </div>
+                        @endif
+                        <button type="submit" class="btn btn-primary">Stage {{ count($variants) > 0 ? count($variants).' variations' : 'product' }} for Botble review</button>
                     </form>
                     @else
-                    <p class="micro">Draft delivery is disabled or this store is not the approved first-party sandbox. No request will be sent.</p>
+                    @if($canStage && count($variants) > 0)
+                    <p class="micro">This product contains {{ count($variants) }} CJ variations. The signed v2 receiver must be upgraded and verified before variation staging is enabled.</p>
+                    @else
+                    <p class="micro">Draft delivery is not available for this signed-in account or store. Workspace role: {{ $role ?? 'none' }}; requires owner/manager with active entitlement and the approved sandbox pairing.</p>
+                    @endif
                     @endif
                 </div>
             @empty
