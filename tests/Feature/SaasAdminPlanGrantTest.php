@@ -18,6 +18,7 @@ final class SaasAdminPlanGrantTest extends TestCase
     {
         parent::setUp();
         config()->set('saas.enabled', true);
+        config()->set('saas.admin_grants_enabled', true);
         config()->set('saas.billing_enabled', true);
         config()->set('saas.stripe_secret', 'sk_test_fake_synthetic_only');
         config()->set('saas.stripe_webhook_secret', 'whsec_fake_synthetic_only');
