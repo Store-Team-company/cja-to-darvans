@@ -77,7 +77,7 @@ final class SaasCustomerProductCatalogTest extends TestCase
         $this->actingAs($owner)->get(route('saas.workspace.products.edit', [
             'workspace' => $workspace->public_id, 'product' => $product->id,
         ]))->assertOk()->assertSee('Edit product')->assertSee('Save product')
-            ->assertSee('Push to Botble');
+            ->assertSee('Publish to Botble');
 
         $this->actingAs($owner)->patch($url, [
             'title' => 'Premium linen tablecloth',
