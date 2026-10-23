@@ -30,7 +30,7 @@ Botble native import gate DATAPILOT_CATALOG_IMPORT_ENABLED must remain false. Ev
 2. Make private Botble plugin, database and env backups, then install an approved release on the sandbox only.
 3. Verify the receiving v2 contract and ON inbound v1 switch. Enable only the separate Botble variant inbox flag.
 4. Independently review sender PR #32 and check the hash-pinned source checkout, backup and destination file hashes. Run scripts/deploy-siteground-publish01b1.php --check first.
-5. Install the approved sender without changing its .env. The installer only patches the sender service, controller, customer editor and SaaS config, adding the variant builder; no schema or Botble changes.
+5. Install the approved sender without changing its .env. The installer only patches the sender service, controller, customer editor, SaaS config and CJ variant-enrichment parser, adding the variant builder; no schema or Botble changes.
 6. After validating receiver compatibility, enable the DataPilot v2 sender flag and clear config cache.
 7. Use an owner/manager customer session. Check the original 40 variation rows, retail price, imagery, and confirm a single uniform retail price explicitly in the staging form.
 8. Stage once. Verify exactly 40 variants in Botble Incoming Products under pending_review; no ecommerce product and no public listing.
