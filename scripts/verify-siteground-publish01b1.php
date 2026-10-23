@@ -55,6 +55,7 @@ echo 'FIXTURE ARTISAN '.implode(' ', array_slice($argv, 1)).PHP_EOL;
 PHP
 );
 $replaced = [
+    'app/Services/Saas/SaasCjProductDetailsFetcher.php',
     'app/Services/Saas/SaasBotbleDraftDelivery.php',
     'app/Http/Controllers/Saas/SaasBotbleDraftDeliveryController.php',
     'resources/views/saas/product-edit.blade.php',
