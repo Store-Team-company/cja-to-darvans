@@ -22,8 +22,8 @@
     </div>
     <div class="card">
         <div class="split"><h2>Subscription</h2><span class="tag {{ $activeSubscription ? 'good' : 'warn' }}">{{ $activeSubscription ? 'Active' : 'Inactive' }}</span></div>
-        <p>{{ $activeSubscription ? 'Your subscription is verified with Stripe.' : 'Choose a plan to prepare your store integrations.' }}</p>
-        <div class="card" style="box-shadow:none;background:#f8faff;margin-bottom:17px"><div class="micro">Current plan</div><h3 style="margin:5px 0">{{ ucfirst($subscription?->plan_code ?? 'No active plan') }}</h3><p style="margin:0">Billing status: {{ ucfirst($subscription?->status ?? 'Not subscribed') }}</p></div>
+        <p>{{ ($accessSource ?? 'none') === 'stripe' ? 'Your subscription is verified through Stripe.' : (($accessSource ?? 'none') === 'complimentary' ? 'A platform administrator granted time-limited complimentary workspace access. No payment was charged.' : 'Choose a plan to prepare your store integrations.') }}</p>
+        <div class="card" style="box-shadow:none;background:#f8faff;margin-bottom:17px"><div class="micro">Current plan</div><h3 style="margin:5px 0">{{ ucfirst(($accessSource ?? 'none') === 'complimentary' ? $adminGrant?->plan_code : ($subscription?->plan_code ?? 'No active plan')) }}</h3><p style="margin:0">{{ ($accessSource ?? 'none') === 'complimentary' ? 'Complimentary access until '.$adminGrant->expires_at->format('M j, Y') : 'Billing status: '.ucfirst($subscription?->status ?? 'Not subscribed') }}</p></div>
         <a class="btn btn-accent" href="{{ route('saas.workspace.billing', $workspace->public_id) }}">{{ $activeSubscription ? 'Manage billing' : 'Explore subscription plans' }} →</a>
         <p class="micro mt">Product import and store publishing remain unavailable until integrations pass release QA.</p>
     </div>
