@@ -72,7 +72,7 @@ if ($rc !== 0 || $rcHead !== 0 || $rcStatus !== 0
 }
 $base = 'ac8dd7874409d39de68c34214e18c44416b1ae1a';
 if (cj01Git($source, ['merge-base', '--is-ancestor', $base, 'HEAD'])[0] !== 0) {
-    cj01Abort('CJ-01 must descend from password-login AUTH-05B');
+    cj01Abort('CJ-01 must descend from approved BOTBLE-04 base');
 }
 if ($apply && (! in_array('--backup-confirmed', $argv, true)
     || ! hash_equals($head, $get('--expected-head')))) {
@@ -103,6 +103,7 @@ $manifest = [
     'routes/saas.php',
     'config/saas.php',
     'database/migrations/2026_10_23_000006_add_saas_cj_auth_state.php',
+    'database/migrations/2026_10_23_000007_guard_saas_cj_credential_revisions.php',
 ];
 
 $plan = [];
@@ -198,6 +199,7 @@ foreach ($plan as $item) {
 
 foreach ([
     ['migrate', '--force', '--no-interaction', '--path=database/migrations/2026_10_23_000006_add_saas_cj_auth_state.php'],
+    ['migrate', '--force', '--no-interaction', '--path=database/migrations/2026_10_23_000007_guard_saas_cj_credential_revisions.php'],
     ['optimize:clear'],
 ] as $params) {
     $proc = proc_open(array_merge([PHP_BINARY, $target.'/artisan'], $params), [
