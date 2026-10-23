@@ -39,7 +39,7 @@ final class SaasEntitlements
     /** An admin grant is complimentary access, never a Stripe payment. */
     public function adminGrant(SaasWorkspace $workspace): ?SaasAdminPlanGrant
     {
-        if (!config('saas.enabled') || $workspace->status !== 'active') {
+        if (!config('saas.enabled') || !config('saas.admin_grants_enabled') || $workspace->status !== 'active') {
             return null;
         }
         return SaasAdminPlanGrant::query()
