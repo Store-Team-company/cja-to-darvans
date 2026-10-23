@@ -96,6 +96,48 @@ foreach ([
     }
 }
 
+
+/**
+ * A customized legacy admin routes file must never be replaced wholesale.
+ * Insert only the three grant routes inside the existing BDP-authenticated group.
+ * Refuse duplicate, missing, relocated or ambiguous route declarations.
+ */
+function billing03MergeAdminRoutes(string $live): string
+{
+    $group = "Route::middleware([BalencoDataPilotAuth::class])->name('bdp.')->group(function () {";
+    $anchor = "    Route::get('/profile', [BdpProfileController::class, 'index'])->name('profile');";
+    foreach ([
+        "Route::get('/saas-workspaces'",
+        "Route::post('/saas-workspaces/",
+        "->name('saas.workspaces')",
+        "->name('saas.workspaces.grant')",
+        "->name('saas.workspaces.revoke')",
+    ] as $conflict) {
+        if (str_contains($live, $conflict)) {
+            billing03Abort('Existing admin grant routes in customized SiteGround file; manual review required');
+        }
+    }
+    if (substr_count($live, $group) !== 1 || substr_count($live, $anchor) !== 1
+        || strpos($live, $anchor) <= strpos($live, $group)) {
+        billing03Abort('Missing/ambiguous BDP admin route anchor; manual review required');
+    }
+
+    $addition = <<<'ROUTES'
+    // BILLING-03: complimentary grants, inside existing BDP administrator auth.
+    Route::get('/saas-workspaces', [\App\Http\Controllers\Saas\SaasAdminPlanGrantController::class, 'index'])
+        ->middleware(\App\Http\Middleware\EnsureSaasEnabled::class)->name('saas.workspaces');
+    Route::post('/saas-workspaces/{workspace:public_id}/grant', [\App\Http\Controllers\Saas\SaasAdminPlanGrantController::class, 'grant'])
+        ->middleware([\App\Http\Middleware\EnsureSaasEnabled::class, 'throttle:5,1'])
+        ->name('saas.workspaces.grant');
+    Route::post('/saas-workspaces/{workspace:public_id}/revoke', [\App\Http\Controllers\Saas\SaasAdminPlanGrantController::class, 'revoke'])
+        ->middleware([\App\Http\Middleware\EnsureSaasEnabled::class, 'throttle:5,1'])
+        ->name('saas.workspaces.revoke');
+
+ROUTES;
+
+    return str_replace($anchor, $addition.$anchor, $live);
+}
+
 $manifest = [
     'app/Models/SaasAdminPlanGrant.php',
     'app/Http/Controllers/Saas/SaasAdminPlanGrantController.php',
@@ -142,10 +184,14 @@ foreach ($manifest as $path) {
         $action = 'replace';
     } elseif ($rcOld !== 0 && $before === null) {
         $action = 'add';
+    } elseif ($path === 'routes/balenco-data-pilot.php' && $before !== null) {
+        $action = 'merge';
+        $merged = billing03MergeAdminRoutes((string) file_get_contents($to));
     } else {
         billing03Abort('SiteGround customization in '.$path.'; refuses unsafe overwrite');
     }
-    $plan[] = compact('path', 'from', 'to', 'before', 'action');
+    $plan[] = compact('path', 'from', 'to', 'before', 'action') + ['merged' => $merged ?? null];
+    unset($merged);
 }
 
 echo "BILLING-03 source commit: {$head}\n";
@@ -167,7 +213,7 @@ if (! mkdir($backup, 0700, true)) {
 }
 $added = [];
 foreach ($plan as $item) {
-    if ($item['action'] === 'replace') {
+    if (in_array($item['action'], ['replace', 'merge'], true)) {
         $dest = $backup.'/'.$item['path'];
         if (! is_dir(dirname($dest)) && ! mkdir(dirname($dest), 0700, true)) {
             billing03Abort('Cannot create backup subdirectory');
@@ -194,8 +240,10 @@ foreach ($plan as $item) {
         billing03Abort('SiteGround changed during deployment; use rollback backup');
     }
     $tmp = tempnam(dirname($item['to']), '.billing03-');
-    if (! $tmp || ! copy($item['from'], $tmp) || ! chmod($tmp, 0644)
-        || ! rename($tmp, $item['to'])) {
+    if (! $tmp || ! ($item['action'] === 'merge'
+            ? file_put_contents($tmp, $item['merged'], LOCK_EX) !== false
+            : copy($item['from'], $tmp))
+        || ! chmod($tmp, 0644) || ! rename($tmp, $item['to'])) {
         if ($tmp) {
             @unlink($tmp);
         }
