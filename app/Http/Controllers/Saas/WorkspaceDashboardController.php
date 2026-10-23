@@ -34,6 +34,7 @@ class WorkspaceDashboardController extends Controller
             'subscription' => $entitlements->billing($workspace),
             'activeSubscription' => $active,
             'accessSource' => $entitlements->accessSource($workspace),
+            'adminGrant' => $entitlements->adminGrant($workspace),
             'steps' => $checks,
             'readySteps' => count(array_filter($checks, fn (array $item) => $item['done'])),
             'recentProducts' => $workspace->products()->latest()->limit(5)->get(),
