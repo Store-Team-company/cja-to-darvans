@@ -102,7 +102,7 @@ $path = $target.'/resources/views/saas/product-edit.blade.php';
 $original = file_get_contents($path);
 p04Write($path, $original."\n<!-- staging customization -->");
 $hash = hash_file('sha256', $path);
-p04Reject(['--check'], 'SiteGround customization in resources/views/saas/products.blade.php');
+p04Reject(['--check'], 'SiteGround customization in resources/views/saas/product-edit.blade.php');
 p04Assert(hash_file('sha256', $path) === $hash, 'Rejected modified custom file');
 p04Write($path, $original);
 
