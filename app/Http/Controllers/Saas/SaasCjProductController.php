@@ -38,7 +38,7 @@ final class SaasCjProductController extends Controller
                 ->withInput($request->except(['_token']));
         }
 
-        return redirect()->route('saas.workspace.products', [
+        return redirect()->route('saas.workspace.products.cj', [
             'workspace' => $workspace->public_id,
             'cj_preview' => $result['key'],
             'view' => $data['view'] ?? 'grid',
@@ -54,7 +54,7 @@ final class SaasCjProductController extends Controller
             'items.*' => ['required', 'string', 'max:160'],
             'view' => ['nullable', Rule::in(['grid', 'list'])],
         ]);
-        $next = route('saas.workspace.products', [
+        $next = route('saas.workspace.products.cj', [
             'workspace' => $workspace->public_id,
             'cj_preview' => $data['cj_preview'],
             'view' => $data['view'] ?? 'grid',

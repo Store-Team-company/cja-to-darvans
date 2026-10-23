@@ -29,6 +29,7 @@
         <nav class="sidebar-links">
             <a class="side-link {{ request()->routeIs('saas.workspace.dashboard') ? 'active' : '' }}" href="{{ route('saas.workspace.dashboard', $workspace->public_id) }}">⌂ &nbsp; Overview</a>
             <a class="side-link {{ request()->routeIs('saas.workspace.products') ? 'active' : '' }}" href="{{ route('saas.workspace.products', $workspace->public_id) }}">▣ &nbsp; My Products</a>
+            <a class="side-link {{ request()->routeIs('saas.workspace.products.cj') || request()->routeIs('saas.workspace.products.cj.*') ? 'active' : '' }}" href="{{ route('saas.workspace.products.cj', $workspace->public_id) }}">↧ &nbsp; Import from CJ</a>
             <a class="side-link {{ request()->routeIs('saas.workspace.connections') ? 'active' : '' }}" href="{{ route('saas.workspace.connections', $workspace->public_id) }}">⇄ &nbsp; Connections</a>
             <a class="side-link {{ request()->routeIs('saas.workspace.team') ? 'active' : '' }}" href="{{ route('saas.workspace.team', $workspace->public_id) }}">♙ &nbsp; Team</a>
             <a class="side-link {{ request()->routeIs('saas.workspace.billing') ? 'active' : '' }}" href="{{ route('saas.workspace.billing', $workspace->public_id) }}">▤ &nbsp; Billing & Plans</a>
