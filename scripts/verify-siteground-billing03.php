@@ -131,7 +131,7 @@ billing03Reject(['--check'], 'Existing admin grant routes');
 billing03Write($route, $original);
 
 unlink($route);
-billing03Reject(['--check'], 'Missing/unsafe source or symlink');
+billing03Reject(['--check'], 'SiteGround customization in routes/balenco-data-pilot.php');
 billing03Write($route, $original);
 rename($route, $target.'/routes/saas-original.php');
 symlink($target.'/routes/api.php', $route);
