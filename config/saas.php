@@ -7,6 +7,10 @@ return [
     'billing_enabled' => (bool) env('SAAS_BILLING_ENABLED', false),
     'public_name' => env('SAAS_PUBLIC_NAME', 'Data Pilot'),
 
+    // Product retrieval is separate from CJ authentication and Botble pairing.
+    // Remains OFF even for paid users until separately authorized and tested.
+    'cj_draft_import_enabled' => (bool) env('SAAS_CJ_DRAFT_IMPORT_ENABLED', false),
+
     // One explicitly authorized internal CJ pilot workspace only; default OFF.
     // Separate from Botble pairing and paid subscriptions.
     'cj_pilot' => [
