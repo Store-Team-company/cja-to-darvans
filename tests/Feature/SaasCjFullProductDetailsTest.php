@@ -230,4 +230,25 @@ final class SaasCjFullProductDetailsTest extends TestCase
         $this->assertSame('Card title', $product->fresh()->title);
         Http::assertNothingSent();
     }
+
+    public function test_enrichment_refuses_more_than_one_hundred_variants_without_silent_truncation(): void
+    {
+        [$owner, $workspace, $product] = $this->fixture();
+        $response = $this->data();
+        $response['data']['variants'] = [];
+        for ($i = 1; $i <= 101; $i++) {
+            $response['data']['variants'][] = [
+                'vid' => 'CJ-VID-'.$i,
+                'variantSku' => 'CJ-SKU-'.$i,
+                'variantKey' => 'Supplier option '.$i,
+                'variantSellPrice' => '12.50',
+            ];
+        }
+        Http::fake(['developers.cjdropshipping.com/*' => Http::response($response, 200)]);
+        $this->actingAs($owner)->post($this->url($workspace, $product->id))
+            ->assertRedirect()->assertSessionHasErrors('cj_details');
+        $product->refresh();
+        $this->assertNull($product->cj_details_fetched_at);
+        $this->assertEmpty($product->source_variants);
+    }
 }
