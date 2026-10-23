@@ -17,6 +17,7 @@ final class SaasAdminPlanGrantController extends Controller
 {
     public function index(Request $request): View
     {
+        abort_unless(config('saas.admin_grants_enabled'), 404);
         $search = trim((string) $request->query('q', ''));
         abort_if(mb_strlen($search) > 150, 422);
 
