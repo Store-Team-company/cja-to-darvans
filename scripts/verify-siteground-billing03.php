@@ -93,7 +93,7 @@ foreach (array_merge($replaced, $prerequisites, ['routes/api.php', '.env', 'arti
 [$status, $output] = billing03Run(['--check']);
 billing03Assert($status === 0 && str_contains($output, 'PASS: read-only BILLING-03 preflight'),
     'Preflight failed: '.$output);
-billing03Assert(str_contains($output, 'replace routes/saas.php')
+billing03Assert(str_contains($output, 'replace routes/balenco-data-pilot.php')
     && str_contains($output, 'add app/Models/SaasAdminPlanGrant.php')
     && str_contains($output, 'add database/migrations/2026_10_23_000009_create_saas_admin_plan_grants.php'),
     'Manifest incorrect');
@@ -111,16 +111,16 @@ billing03Reject(['--apply', '--expected-head='.$sha], 'Apply requires');
 billing03Reject(['--apply', '--backup-confirmed'], 'Apply requires');
 echo "PASS: apply requires backup confirmation and exact reviewed SHA.\n";
 
-$route = $target.'/routes/saas.php';
+$route = $target.'/routes/balenco-data-pilot.php';
 $original = file_get_contents($route);
 billing03Write($route, $original."\n// Customer-only customization; must never be overwritten.\n");
 $hash = hash_file('sha256', $route);
-billing03Reject(['--check'], 'SiteGround customization in routes/saas.php');
+billing03Reject(['--check'], 'SiteGround customization in routes/balenco-data-pilot.php');
 billing03Assert(hash_file('sha256', $route) === $hash, 'Refusal modified a customized live file');
 billing03Write($route, $original);
 
 unlink($route);
-billing03Reject(['--check'], 'SiteGround customization in routes/saas.php');
+billing03Reject(['--check'], 'SiteGround customization in routes/balenco-data-pilot.php');
 billing03Write($route, $original);
 rename($route, $target.'/routes/saas-original.php');
 symlink($target.'/routes/api.php', $route);
