@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Saas;
 use App\Http\Controllers\Controller;
 use App\Models\SaasWorkspace;
 use App\Services\Saas\SaasEntitlements;
+use App\Services\Saas\SaasCjProductDraftImporter;
 use App\Services\Saas\WorkspacePermissions;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -25,6 +26,7 @@ class SaasPortalController extends Controller
     {
         return view('saas.products', $this->shared($request, $workspace) + [
             'products' => $workspace->products()->latest()->paginate(15),
+            'canImportCj' => app(SaasCjProductDraftImporter::class)->canImport($request->user(), $workspace),
         ]);
     }
 
