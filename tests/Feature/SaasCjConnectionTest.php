@@ -267,6 +267,154 @@ class SaasCjConnectionTest extends TestCase
             ->assertOk()->assertDontSee('Save encrypted key');
     }
 
+    public function test_replacing_same_api_key_while_https_call_is_in_flight_never_connects_stale_revision(): void
+    {
+        [$owner, $workspace] = $this->fixture();
+        $this->save($owner, $workspace);
+
+        Http::fake(['developers.cjdropshipping.com/*' => function ($req) use ($owner, $workspace) {
+            // Same API-key VALUE, but a distinct owner-approved save operation.
+            $this->actingAs($owner)->post($this->endpoint($workspace, 'save'), [
+                'api_key' => self::SECRET,
+            ])->assertRedirect();
+
+            return Http::response($this->response(), 200);
+        }]);
+
+        $this->actingAs($owner)->post($this->endpoint($workspace, 'verify'))
+            ->assertSessionHasErrors('cj');
+
+        $record = $workspace->cjConnections()->firstOrFail()->fresh();
+        $this->assertSame(2, (int) $record->credential_revision);
+        $this->assertSame('pending_verification', $record->status);
+        $this->assertNull($record->access_token);
+        $this->assertNull($record->refresh_token);
+        $this->assertNull($record->verification_attempt_id);
+    }
+
+    public function test_replacing_different_api_key_while_https_call_is_in_flight_never_connects_old_key(): void
+    {
+        [$owner, $workspace] = $this->fixture();
+        $this->save($owner, $workspace);
+        $nextKey = 'CJ-ROTATED-PRIVATE-API-KEY-EXAMPLE';
+
+        Http::fake(['developers.cjdropshipping.com/*' => function ($req) use ($owner, $workspace, $nextKey) {
+            $this->actingAs($owner)->post($this->endpoint($workspace, 'save'), [
+                'api_key' => $nextKey,
+            ])->assertRedirect();
+
+            return Http::response($this->response(), 200);
+        }]);
+
+        $this->actingAs($owner)->post($this->endpoint($workspace, 'verify'))
+            ->assertSessionHasErrors('cj');
+        $record = $workspace->cjConnections()->firstOrFail()->fresh();
+        $this->assertSame(2, (int) $record->credential_revision);
+        $this->assertSame($nextKey, $record->api_key);
+        $this->assertSame('pending_verification', $record->status);
+        $this->assertNull($record->access_token);
+    }
+
+    public function test_disconnecting_during_remote_auth_prevents_stale_success_from_reconnecting(): void
+    {
+        [$owner, $workspace] = $this->fixture();
+        $this->save($owner, $workspace);
+
+        Http::fake(['developers.cjdropshipping.com/*' => function ($req) use ($owner, $workspace) {
+            $this->actingAs($owner)->delete($this->endpoint($workspace, 'remove'))
+                ->assertRedirect();
+
+            return Http::response($this->response(), 200);
+        }]);
+        $this->actingAs($owner)->post($this->endpoint($workspace, 'verify'))
+            ->assertSessionHasErrors('cj');
+
+        $record = $workspace->cjConnections()->firstOrFail()->fresh();
+        $this->assertSame('disconnected', $record->status);
+        $this->assertSame(2, (int) $record->credential_revision);
+        $this->assertNull($record->verification_attempt_id);
+        $this->assertNull($record->api_key);
+        $this->assertNull($record->access_token);
+    }
+
+    public function test_stale_failure_cannot_downgrade_newer_success(): void
+    {
+        [$owner, $workspace] = $this->fixture();
+        $this->save($owner, $workspace);
+        $old = $workspace->cjConnections()->firstOrFail();
+
+        // Simulates the other worker finishing a newer verification while an
+        // older HTTPS callback is still outstanding. The global rate lock
+        // normally serializes these; revision/operation guard is defense in depth.
+        Http::fake(['developers.cjdropshipping.com/*' => function ($req) use ($old) {
+            $newer = $old->fresh();
+            $newer->credential_revision++;
+            $newer->verification_attempt_id = null;
+            $newer->status = 'connected';
+            $newer->access_token = 'newer-worker-valid-access';
+            $newer->refresh_token = 'newer-worker-valid-refresh';
+            $newer->last_verified_at = now();
+            $newer->save();
+
+            return Http::response([
+                'success' => false, 'result' => false, 'code' => 1600005,
+                'message' => 'synthetic older failure',
+            ], 200);
+        }]);
+
+        $this->actingAs($owner)->post($this->endpoint($workspace, 'verify'))
+            ->assertSessionHasErrors('cj');
+        $record = $old->fresh();
+        $this->assertSame('connected', $record->status);
+        $this->assertSame('newer-worker-valid-access', $record->access_token);
+        $this->assertNull($record->last_error_code);
+    }
+
+    public function test_suspending_workspace_during_remote_auth_blocks_success(): void
+    {
+        [$owner, $workspace] = $this->fixture();
+        $this->save($owner, $workspace);
+        Http::fake(['developers.cjdropshipping.com/*' => function ($req) use ($workspace) {
+            $workspace->forceFill(['status' => 'suspended'])->save();
+
+            return Http::response($this->response(), 200);
+        }]);
+
+        $this->actingAs($owner)->post($this->endpoint($workspace, 'verify'))
+            ->assertSessionHasErrors('cj');
+        $record = $workspace->cjConnections()->firstOrFail();
+        $this->assertNotSame('connected', $record->status);
+        $this->assertNull($record->access_token);
+        $this->actingAs($owner)->post($this->endpoint($workspace, 'save'), [
+            'api_key' => self::SECRET,
+        ])->assertForbidden();
+    }
+
+    public function test_malformed_expiration_fields_or_http_redirect_cannot_connect(): void
+    {
+        [$owner, $workspace] = $this->fixture();
+        $this->save($owner, $workspace);
+        $invalid = $this->response();
+        $invalid['data']['accessTokenExpiryDate'] = 'not-a-real-date';
+
+        Http::fake(['developers.cjdropshipping.com/*' => Http::response($invalid, 200)]);
+        $this->actingAs($owner)->post($this->endpoint($workspace, 'verify'))
+            ->assertSessionHasErrors('cj');
+        $this->assertSame('failed', $workspace->cjConnections()->firstOrFail()->status);
+
+        $this->travel(70)->seconds();
+        \Illuminate\Support\Facades\Cache::flush();
+        Http::fake(['developers.cjdropshipping.com/*' => Http::response('', 302, [
+            'Location' => 'https://redirected.example.invalid/steal',
+        ])]);
+        $this->actingAs($owner)->post($this->endpoint($workspace, 'verify'))
+            ->assertSessionHasErrors('cj');
+        $this->assertSame('failed', $workspace->cjConnections()->firstOrFail()->status);
+        Http::assertSent(fn ($req) => str_starts_with(
+            $req->url(), 'https://developers.cjdropshipping.com/api2.0/v1/authentication/'
+        ));
+    }
+
     public function test_never_calls_cj_if_request_is_unauthenticated(): void
     {
         [$owner, $workspace] = $this->fixture();
