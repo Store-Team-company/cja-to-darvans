@@ -8,7 +8,7 @@ if (PHP_SAPI !== 'cli') {
 $root = dirname(__DIR__);
 $plugin = $root.'/integrations/botble-connector';
 $manifest = json_decode((string) file_get_contents($plugin.'/plugin.json'), true, 512, JSON_THROW_ON_ERROR);
-if (($manifest['version'] ?? '') !== '0.3.1'
+if (($manifest['version'] ?? '') !== '0.3.3'
     || ($manifest['namespace'] ?? '') !== 'Botble\\DatapilotConnector\\'
     || !class_exists(ZipArchive::class)) {
     fwrite(STDERR, "ABORT: Invalid Botble connector manifest or ZipArchive unavailable.\n");
@@ -18,7 +18,7 @@ $outdir = $root.'/dist';
 if (!is_dir($outdir) && !mkdir($outdir, 0755, true)) {
     throw new RuntimeException('Could not create build output.');
 }
-$dest = $outdir.'/datapilot-connector-0.3.1.zip';
+$dest = $outdir.'/datapilot-connector-0.3.3.zip';
 $zip = new ZipArchive();
 if ($zip->open($dest, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
     throw new RuntimeException('Cannot build Botble plugin ZIP.');
