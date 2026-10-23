@@ -7,6 +7,15 @@ return [
     'billing_enabled' => (bool) env('SAAS_BILLING_ENABLED', false),
     'public_name' => env('SAAS_PUBLIC_NAME', 'Data Pilot'),
 
+    // Server-pinned, first-party Botble sandbox only. Default OFF.
+    // Never grants CJ access, catalog publishing, or billing.
+    'botble_pilot' => [
+        'enabled' => (bool) env('SAAS_BOTBLE_PILOT_ENABLED', false),
+        'workspace_id' => env('SAAS_BOTBLE_PILOT_WORKSPACE_ID', ''),
+        'store_id' => env('SAAS_BOTBLE_PILOT_STORE_ID', ''),
+        'store_url' => env('SAAS_BOTBLE_PILOT_STORE_URL', ''),
+    ],
+
     // Stripe LIVE/TEST keys belong only in the server's private .env.
     // Price IDs must be created and configured in Stripe before checkout works.
     'stripe_secret' => env('STRIPE_SECRET_KEY', ''),
