@@ -23,10 +23,16 @@ return new class extends Migration
             $table->string('source_weight_g', 40)->nullable();
             $table->timestamp('cj_details_fetched_at')->nullable();
         });
+        Schema::table('saas_cj_connections', function (Blueprint $table) {
+            $table->timestamp('last_details_fetch_at')->nullable();
+        });
     }
 
     public function down(): void
     {
+        Schema::table('saas_cj_connections', function (Blueprint $table) {
+            $table->dropColumn('last_details_fetch_at');
+        });
         Schema::table('saas_products', function (Blueprint $table) {
             $table->dropColumn([
                 'slug', 'tags', 'short_description_html', 'long_description_html',
