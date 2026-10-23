@@ -17,9 +17,12 @@ class SaasCjConnection extends Model
         'access_token' => 'encrypted',
         'refresh_token' => 'encrypted',
         'last_verified_at' => 'datetime',
+        'access_token_expires_at' => 'datetime',
+        'refresh_token_expires_at' => 'datetime',
+        'last_auth_attempt_at' => 'datetime',
     ];
 
-    protected $hidden = ['api_key', 'access_token', 'refresh_token'];
+    protected $hidden = ['api_key', 'access_token', 'refresh_token', 'last_error_code'];
 
     public function workspace(): BelongsTo
     {

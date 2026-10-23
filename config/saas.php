@@ -7,6 +7,13 @@ return [
     'billing_enabled' => (bool) env('SAAS_BILLING_ENABLED', false),
     'public_name' => env('SAAS_PUBLIC_NAME', 'Data Pilot'),
 
+    // One explicitly authorized internal CJ pilot workspace only; default OFF.
+    // Separate from Botble pairing and paid subscriptions.
+    'cj_pilot' => [
+        'enabled' => (bool) env('SAAS_CJ_PILOT_ENABLED', false),
+        'workspace_id' => env('SAAS_CJ_PILOT_WORKSPACE_ID', ''),
+    ],
+
     // Server-pinned, first-party Botble sandbox only. Default OFF.
     // Never grants CJ access, catalog publishing, or billing.
     'botble_pilot' => [

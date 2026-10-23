@@ -27,7 +27,11 @@ class EnsureSaasEntitlement
             && app(\App\Services\Saas\SaasFirstPartyPilot::class)->allowsStoreRegistration(
                 $workspace, (string) $request->input('base_url', '')
             );
-        abort_unless($paid || $internalPilot, 403, 'Active subscription required or usage limit reached.');
+        $cjPilot = $action === 'connect_cj'
+            && ($request->routeIs('saas.workspace.connections.cj.save')
+                || $request->routeIs('saas.workspace.connections.cj.verify'))
+            && app(\App\Services\Saas\SaasCjPilot::class)->allows($workspace);
+        abort_unless($paid || $internalPilot || $cjPilot, 403, 'Active subscription required or usage limit reached.');
 
         return $next($request);
     }

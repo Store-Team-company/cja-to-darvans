@@ -13,39 +13,187 @@ use Illuminate\Validation\ValidationException;
 
 class SaasConnectionController extends Controller
 {
+    private function cjAuthorized(SaasWorkspace $workspace): bool
+    {
+        return app(\App\Services\Saas\SaasEntitlements::class)->allows($workspace, 'connect_cj')
+            || app(\App\Services\Saas\SaasCjPilot::class)->allows($workspace);
+    }
+
     public function saveCj(Request $request, SaasWorkspace $workspace): RedirectResponse
     {
         app(WorkspacePermissions::class)->authorize($request->user(), $workspace, 'manage_connections');
-        $data = $request->validate([
-            'api_key' => ['required', 'string', 'min:16', 'max:512'],
+        abort_unless($this->cjAuthorized($workspace), 403);
+
+        // Never flash an API key to Laravel's old-input session on validation
+        // failure (it is not in Laravel's default password exclusion list).
+        $validator = \Illuminate\Support\Facades\Validator::make($request->all(), [
+            'api_key' => ['required', 'string', 'min:16', 'max:200'],
         ]);
+        if ($validator->fails()) {
+            return back()->withErrors($validator)->withInput($request->except('api_key'));
+        }
+        $data = $validator->validated();
+        DB::transaction(function () use ($workspace, $data): void {
+            $locked = SaasWorkspace::whereKey($workspace->id)->lockForUpdate()->firstOrFail();
+            abort_unless($this->cjAuthorized($locked), 403);
 
-        $connection = $workspace->cjConnections()->firstOrNew([]);
-        // Reset prior tokens when credentials are replaced.
-        $connection->api_key = trim($data['api_key']);
-        $connection->access_token = null;
-        $connection->refresh_token = null;
-        $connection->status = 'pending_verification';
-        $connection->last_verified_at = null;
-        $connection->save();
+            $connection = $locked->cjConnections()->firstOrNew([]);
+            // Increment even if the same key was entered: ciphertext/value equality
+            // cannot distinguish a newly saved credential revision.
+            $connection->credential_revision = ((int) $connection->credential_revision) + 1;
+            $connection->verification_attempt_id = null;
+            $connection->api_key = trim($data['api_key']);
+            $connection->access_token = null;
+            $connection->refresh_token = null;
+            $connection->access_token_expires_at = null;
+            $connection->refresh_token_expires_at = null;
+            $connection->status = 'pending_verification';
+            $connection->last_verified_at = null;
+            $connection->last_error_code = null;
+            // Keep last_auth_attempt_at, so replacing a key cannot evade CJ throttling.
+            $connection->save();
+        });
 
-        return back()->with('status', 'CJ API key stored securely. API verification is not enabled yet.');
+        return back()->with('status', 'CJ credentials encrypted and saved. Use Test connection to verify access.');
+    }
+
+    public function verifyCj(
+        Request $request,
+        SaasWorkspace $workspace,
+        \App\Services\Saas\SaasCjApiClient $client
+    ): RedirectResponse {
+        app(WorkspacePermissions::class)->authorize($request->user(), $workspace, 'manage_connections');
+        abort_unless($this->cjAuthorized($workspace), 403);
+
+        // Serialize authorization reservations per workspace without holding a
+        // database lock over the remote HTTPS request.
+        $reservation = DB::transaction(function () use ($workspace): array {
+            $locked = SaasWorkspace::whereKey($workspace->id)->lockForUpdate()->firstOrFail();
+            abort_unless($this->cjAuthorized($locked), 403);
+            $connection = $locked->cjConnections()->lockForUpdate()->first();
+            if (!$connection || !$connection->api_key) {
+                return ['error' => 'missing'];
+            }
+            if ($connection->last_auth_attempt_at && $connection->last_auth_attempt_at->gt(now()->subMinute())) {
+                return ['error' => 'cooldown'];
+            }
+
+            $connection->last_auth_attempt_at = now();
+            // A unique reservation prevents an older response from replacing
+            // a newer successful verification, even for an identical API key.
+            $connection->verification_attempt_id = (string) \Illuminate\Support\Str::uuid();
+            $connection->status = 'pending_verification';
+            $connection->save();
+            $refresh = $connection->access_token
+                && $connection->access_token_expires_at
+                && $connection->access_token_expires_at->lte(now()->addDay())
+                && $connection->refresh_token
+                && $connection->refresh_token_expires_at?->gt(now()->addDay());
+
+            return [
+                'connection_id' => $connection->id,
+                'credential_revision' => (int) $connection->credential_revision,
+                'verification_attempt_id' => $connection->verification_attempt_id,
+                'api_key' => $connection->api_key,
+                'refresh_token' => $refresh ? $connection->refresh_token : null,
+            ];
+        });
+
+        if (isset($reservation['error'])) {
+            return back()->withErrors(['cj' => $reservation['error'] === 'cooldown'
+                ? 'CJ verification was attempted recently. Try again in one minute.'
+                : 'Save a CJ API key before testing its connection.']);
+        }
+
+        // CJ documents 1 QPS authentication and server-side token caching.
+        // Shared lock plus 2-second global cache gate prevents simultaneous
+        // authentication from multiple workspaces on the shared hosting IP.
+        $lock = \Illuminate\Support\Facades\Cache::lock('datapilot-cj-auth-global', 20);
+        if (!$lock->get()) {
+            return back()->withErrors(['cj' => 'CJ authentication is busy. Please retry in one minute.']);
+        }
+        try {
+            if (!\Illuminate\Support\Facades\Cache::add('datapilot-cj-auth-cooldown', true, 2)) {
+                return back()->withErrors(['cj' => 'CJ authentication is rate-limited. Please retry shortly.']);
+            }
+            try {
+                $tokens = $reservation['refresh_token']
+                    ? $client->refresh($reservation['refresh_token'])
+                    : $client->authorize($reservation['api_key']);
+                $problem = null;
+            } catch (\App\Services\Saas\SaasCjApiException $e) {
+                $tokens = null;
+                $problem = $e;
+            }
+        } finally {
+            $lock->release();
+        }
+
+        $requestUser = $request->user();
+        $updated = DB::transaction(function () use ($workspace, $reservation, $tokens, $problem, $requestUser): bool {
+            $locked = SaasWorkspace::whereKey($workspace->id)->lockForUpdate()->firstOrFail();
+            $connection = $locked->cjConnections()->lockForUpdate()->first();
+            if (!$connection || $connection->id !== $reservation['connection_id']
+                || !$connection->api_key
+                || (int) $connection->credential_revision !== $reservation['credential_revision']
+                || !is_string($connection->verification_attempt_id)
+                || !hash_equals($reservation['verification_attempt_id'], $connection->verification_attempt_id)
+                || !hash_equals($reservation['api_key'], $connection->api_key)
+                || $locked->status !== 'active'
+                || !$this->cjAuthorized($locked)
+                || !app(WorkspacePermissions::class)->allows($requestUser, $locked, 'manage_connections')) {
+                return false; // Superseded, disconnected, suspended or revoked.
+            }
+            $connection->verification_attempt_id = null;
+            if ($problem) {
+                $connection->status = 'failed';
+                $connection->last_error_code = $problem->reason;
+                $connection->access_token = null;
+                $connection->refresh_token = null;
+                $connection->access_token_expires_at = null;
+                $connection->refresh_token_expires_at = null;
+            } else {
+                $connection->fill($tokens);
+                $connection->status = 'connected';
+                $connection->last_error_code = null;
+                $connection->last_verified_at = now();
+            }
+            $connection->save();
+
+            return true;
+        });
+
+        if (!$updated) {
+            return back()->withErrors(['cj' => 'Credentials changed while connecting. Test the latest saved key.']);
+        }
+
+        return $problem
+            ? back()->withErrors(['cj' => $problem->safeMessage()])
+            : back()->with('status', 'CJ authentication succeeded. Your connection is now verified.');
     }
 
     public function removeCj(Request $request, SaasWorkspace $workspace): RedirectResponse
     {
         app(WorkspacePermissions::class)->authorize($request->user(), $workspace, 'manage_connections');
-        $connection = $workspace->cjConnections()->first();
-        if ($connection) {
-            $connection->api_key = null;
-            $connection->access_token = null;
-            $connection->refresh_token = null;
-            $connection->status = 'disconnected';
-            $connection->last_verified_at = null;
-            $connection->save();
-        }
+        DB::transaction(function () use ($workspace): void {
+            $locked = SaasWorkspace::whereKey($workspace->id)->lockForUpdate()->firstOrFail();
+            $connection = $locked->cjConnections()->lockForUpdate()->first();
+            if ($connection) {
+                $connection->credential_revision = ((int) $connection->credential_revision) + 1;
+                $connection->verification_attempt_id = null;
+                $connection->api_key = null;
+                $connection->access_token = null;
+                $connection->refresh_token = null;
+                $connection->access_token_expires_at = null;
+                $connection->refresh_token_expires_at = null;
+                $connection->status = 'disconnected';
+                $connection->last_verified_at = null;
+                $connection->last_error_code = null;
+                $connection->save();
+            }
+        });
 
-        return back()->with('status', 'CJ credentials removed from this workspace.');
+        return back()->with('status', 'CJ credentials and tokens securely removed from this workspace.');
     }
 
     public function addStore(Request $request, SaasWorkspace $workspace): RedirectResponse

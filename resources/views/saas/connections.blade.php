@@ -2,6 +2,8 @@
 @section('title', 'Connections')
 @section('content')
 @php
+    $canConnectCj = $role === 'owner' && ($activeSubscription
+        || app(\App\Services\Saas\SaasCjPilot::class)->allows($workspace));
     // Only the specifically pinned internal staging workspace may see the
     // limited no-billing Botble registration form.
     $pilot = app(\App\Services\Saas\SaasFirstPartyPilot::class);
@@ -11,18 +13,43 @@
 <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(320px,1fr))">
     <div class="card">
         <div class="split"><h2>CJ Dropshipping</h2><span class="tag {{ $cjConnection?->status === 'connected' ? 'good' : 'off' }}">{{ str_replace('_', ' ', ucfirst($cjConnection?->status ?? 'Not connected')) }}</span></div>
-        <p>Your API key will be stored encrypted and never displayed. CJ API verification and product import are not enabled in this release.</p>
-        @if($role === 'owner' && $activeSubscription)
-        <form method="post" action="{{ route('saas.workspace.connections.cj.save', $workspace->public_id) }}">@csrf
-            <div class="form-field"><label for="cj_api_key">{{ $cjConnection && $cjConnection->status !== 'disconnected' ? 'Replace CJ API key' : 'CJ API key' }}</label><input type="password" id="cj_api_key" name="api_key" autocomplete="off" required minlength="16" maxlength="512" placeholder="Enter your own CJ API key">@error('api_key')<span class="error" role="alert">{{ $message }}</span>@enderror</div>
-            <button class="btn btn-primary" type="submit">Save key for verification</button>
-        </form>
-        @if($cjConnection && $cjConnection->status !== 'disconnected')
-        <form method="post" action="{{ route('saas.workspace.connections.cj.remove', $workspace->public_id) }}" style="margin-top:14px">@csrf @method('DELETE')<button class="btn btn-sm" type="submit">Remove saved key</button></form>
+        <p>Connect your own CJ Dropshipping account using its API key. Data Pilot encrypts the credentials and verifies them directly with the official CJ API.</p>
+        @if(session('status'))<div class="alert ok" role="status">{{ session('status') }}</div>@endif
+        @error('cj')<p class="alert" role="alert">{{ $message }}</p>@enderror
+        @if($cjConnection)
+            <p class="micro">Status:
+                <strong>{{ str_replace('_', ' ', ucfirst($cjConnection->status)) }}</strong>
+            </p>
+            @if($cjConnection->last_verified_at)
+                <p class="micro">Last verified: {{ $cjConnection->last_verified_at->format('Y-m-d H:i T') }}</p>
+            @endif
+            @if($cjConnection->status === 'failed')
+                <p class="alert">CJ verification failed. Check your API key and authorization or retry after the cooldown.</p>
+            @endif
         @endif
-        @elseif($role !== 'owner')<p class="micro">Only your workspace owner can manage CJ credentials.</p>
-        @else<p class="alert">Activate a monthly subscription before adding CJ credentials.</p>@endif
-        <p class="micro mt">Saving a key does not activate the CJ integration or make API requests. Connection testing follows official multi-merchant approval.</p>
+        @if($canConnectCj)
+            <form method="post" action="{{ route('saas.workspace.connections.cj.save', $workspace->public_id) }}" autocomplete="off">@csrf
+                <div class="form-field">
+                    <label for="cj_api_key">{{ $cjConnection && $cjConnection->getRawOriginal('api_key') ? 'Replace CJ API key' : 'CJ API key' }}</label>
+                    <input type="password" id="cj_api_key" name="api_key" autocomplete="new-password" required minlength="16" maxlength="200" placeholder="Paste CJ API key">
+                    @error('api_key')<span class="error" role="alert">{{ $message }}</span>@enderror
+                </div>
+                <button class="btn btn-primary" type="submit">Save encrypted key</button>
+            </form>
+            @if($cjConnection && $cjConnection->getRawOriginal('api_key'))
+                <form method="post" action="{{ route('saas.workspace.connections.cj.verify', $workspace->public_id) }}" style="margin-top:12px">@csrf
+                    <button class="btn btn-primary" type="submit">Test connection</button>
+                </form>
+                <form method="post" action="{{ route('saas.workspace.connections.cj.remove', $workspace->public_id) }}" style="margin-top:12px">@csrf @method('DELETE')
+                    <button class="btn btn-sm" type="submit">Disconnect CJ</button>
+                </form>
+            @endif
+        @elseif($role !== 'owner')
+            <p class="micro">Only the workspace owner can manage CJ credentials.</p>
+        @else
+            <p class="alert">Activate a monthly subscription before connecting CJ. A separately authorized internal CJ pilot may be used on one approved staging workspace.</p>
+        @endif
+        <p class="micro mt">CJ authentication does not import products or enable catalog publishing.</p>
     </div>
     <div class="card">
         <div class="split"><h2>Botble stores</h2><span class="tag">{{ $stores->count() }} saved</span></div>
