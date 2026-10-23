@@ -132,7 +132,8 @@ if (!is_array($oldManifest) || ($oldManifest['version'] ?? null) !== '0.3.2'
     || ($oldManifest['namespace'] ?? null) !== 'Botble\\DatapilotConnector\\') {
     b03cAbort('Expected installed Botble Connector v0.3.2 with correct namespace.');
 }
-$newJson = preg_replace('/("version"\s*:\s*")0\.3\.2(")/', '10.3.32', $json, -1, $count);
+$newJson = preg_replace_callback('/("version"\s*:\s*")0\.3\.2(")/',
+    static fn (array $parts): string => $parts[1].'0.3.3'.$parts[2], $json, -1, $count);
 if ($count !== 1 || !is_string($newJson)
     || (json_decode($newJson, true)['version'] ?? null) !== '0.3.3') {
     b03cAbort('Connector manifest cannot be safely version-patched.');
