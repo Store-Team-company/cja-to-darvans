@@ -228,15 +228,19 @@ final class SaasCjProductDetailsFetcher
         if (!is_array($source) || !array_is_list($source)) {
             return [];
         }
+        if (count($source) > 100) {
+            // Do not silently omit supplier SKU records during enrichment.
+            throw new SaasCjApiException('invalid_response');
+        }
         $result = [];
-        foreach (array_slice($source, 0, 100) as $item) {
+        foreach ($source as $item) {
             if (!is_array($item)) {
-                continue;
+                throw new SaasCjApiException('invalid_response');
             }
             $id = $this->text($item['vid'] ?? $item['id'] ?? null, 160);
             $sku = $this->text($item['variantSku'] ?? null, 180);
             if (!$id && !$sku) {
-                continue;
+                throw new SaasCjApiException('invalid_response');
             }
             $result[] = [
                 'id' => $id,
