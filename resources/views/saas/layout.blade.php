@@ -38,7 +38,7 @@
         <form method="post" action="{{ route('saas.logout') }}">@csrf<button type="submit" class="logout">Sign out</button></form></div>
     </aside>
     <div class="workspace-body">
-        <header class="workspace-top"><strong>{{ $workspace->name }} <span class="tag {{ $activeSubscription ?? false ? 'good' : 'warn' }}">{{ $activeSubscription ?? false ? 'Subscription active' : 'Subscription required' }}</span></strong><span class="subtle">{{ auth()->user()->email }}</span></header>
+        <header class="workspace-top"><strong>{{ $workspace->name }} <span class="tag {{ $activeSubscription ?? false ? 'good' : 'warn' }}">{{ ($accessSource ?? 'none') === 'complimentary' ? 'Complimentary access' : (($activeSubscription ?? false) ? 'Subscription active' : 'Subscription required') }}</span></strong><span class="subtle">{{ auth()->user()->email }}</span></header>
         <main class="workspace-content">
             @if(session('status'))<div class="alert ok" role="status">{{ session('status') }}</div>@endif
             @if(session('error'))<div class="alert" role="alert">{{ session('error') }}</div>@endif

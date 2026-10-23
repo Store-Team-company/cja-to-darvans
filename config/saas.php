@@ -5,6 +5,7 @@ return [
     'enabled' => (bool) env('SAAS_ENABLED', false),
     'registration_enabled' => (bool) env('SAAS_REGISTRATION_ENABLED', false),
     'billing_enabled' => (bool) env('SAAS_BILLING_ENABLED', false),
+    'admin_grants_enabled' => (bool) env('SAAS_ADMIN_GRANTS_ENABLED', false),
     'public_name' => env('SAAS_PUBLIC_NAME', 'Data Pilot'),
 
     // Product retrieval is separate from CJ authentication and Botble pairing.

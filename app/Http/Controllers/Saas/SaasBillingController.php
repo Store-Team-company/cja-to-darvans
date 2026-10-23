@@ -25,6 +25,8 @@ class SaasBillingController extends Controller
             'planCatalog' => $plans,
             'bill' => $entitlements->billing($workspace),
             'activeSubscription' => $entitlements->active($workspace),
+            'paidSubscription' => $entitlements->paidActive($workspace),
+            'adminGrant' => $entitlements->adminGrant($workspace),
         ]);
     }
 
@@ -36,7 +38,7 @@ class SaasBillingController extends Controller
             return back()->with('error', 'Subscription checkout is not configured yet.');
         }
 
-        if ($entitlements->active($workspace)) {
+        if ($entitlements->paidActive($workspace)) {
             return redirect()->route('saas.workspace.billing', $workspace->public_id)
                 ->with('error', 'Use Manage subscription to change your existing plan.');
         }

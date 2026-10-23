@@ -19,6 +19,7 @@ class SaasPortalController extends Controller
             'workspace' => $workspace,
             'role' => app(WorkspacePermissions::class)->roleFor($request->user(), $workspace),
             'activeSubscription' => app(SaasEntitlements::class)->active($workspace),
+            'accessSource' => app(SaasEntitlements::class)->accessSource($workspace),
         ];
     }
 
