@@ -63,7 +63,7 @@ class DatapilotConnectorInboxSecurityTest extends TestCase
         $secret = $secretOverride ?? $this->pairing->shared_secret;
         $signature = 'sha256='.ConnectorSigning::sign($secret, 'POST', '/api/datapilot/v1/drafts', $time, $nonce, $body);
         if ($tamper) {
-            $body = str_replace('Sample dress', 'Tampered dress', $body);
+            $body = str_replace(['Sample dress', 'CJ Bedding Set'], ['Tampered dress', 'Tampered bedding'], $body);
         }
 
         return $this->call('POST', '/api/datapilot/v1/drafts', [], [], [], [
