@@ -232,4 +232,35 @@ class DatapilotConnectorInboxSecurityTest extends TestCase
         $this->assertDatabaseCount('datapilot_connector_drafts', 1);
         $this->assertDatabaseCount('datapilot_connector_nonces', 2);
     }
+
+    public function test_v2_hundred_one_variants_are_rejected_instead_of_truncated(): void
+    {
+        config()->set('datapilot-connector.variant_drafts_enabled', true);
+        $p = $this->fortyVariantDraft();
+        for ($i = 41; $i <= 101; $i++) {
+            $v = $p['variants'][0];
+            $v['source_variant_id'] = 'CJ-V'.$i;
+            $v['sku'] = 'BEDDING-'.$i;
+            $v['attributes']['CJ Option'] = 'Other size '.$i;
+            $p['variants'][] = $v;
+        }
+        $p['variant_count'] = 101;
+        $this->send($p)->assertStatus(422);
+        $this->assertDatabaseCount('datapilot_connector_drafts', 0);
+    }
+
+    public function test_v2_unknown_fields_and_malformed_attachments_are_rejected(): void
+    {
+        config()->set('datapilot-connector.variant_drafts_enabled', true);
+        $p = $this->fortyVariantDraft();
+        $p['publish'] = true;
+        $this->send($p)->assertStatus(422);
+        $p = $this->fortyVariantDraft();
+        $p['images'][] = 'file:///etc/passwd';
+        $this->send($p)->assertStatus(422);
+        $p = $this->fortyVariantDraft();
+        $p['variants'][0]['image'] = 'http://example.test/insecure.jpg';
+        $this->send($p)->assertStatus(422);
+        $this->assertDatabaseCount('datapilot_connector_drafts', 0);
+    }
 }
