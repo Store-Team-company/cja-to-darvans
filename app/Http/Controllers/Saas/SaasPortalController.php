@@ -25,8 +25,40 @@ class SaasPortalController extends Controller
 
     public function products(Request $request, SaasWorkspace $workspace): View
     {
+        $input = $request->validate([
+            'q' => ['nullable', 'string', 'max:100'],
+            'status' => ['nullable', 'in:all,draft,approved'],
+        ]);
+        $search = trim((string) ($input['q'] ?? ''));
+        $status = $input['status'] ?? 'all';
+        $query = $workspace->products();
+        if ($search !== '') {
+            $like = '%'.addcslashes($search, '%_\\').'%';
+            $query->where(function ($q) use ($like): void {
+                $q->where('title', 'like', $like)
+                    ->orWhere('sku', 'like', $like)
+                    ->orWhere('cj_product_id', 'like', $like);
+            });
+        }
+        if ($status !== 'all') {
+            $query->where('status', $status);
+        }
+
         return view('saas.products', $this->shared($request, $workspace) + [
-            'products' => $workspace->products()->latest()->paginate(15),
+            'products' => $query->latest()->paginate(15)->withQueryString(),
+            'counts' => [
+                'all' => $workspace->products()->count(),
+                'draft' => $workspace->products()->where('status', 'draft')->count(),
+            ],
+            'connectedStores' => $workspace->stores()->where('status', 'connected')->count(),
+            'search' => $search,
+            'status' => $status,
+        ]);
+    }
+
+    public function importCj(Request $request, SaasWorkspace $workspace): View
+    {
+        return view('saas.cj-import', $this->shared($request, $workspace) + [
             'canImportCj' => app(SaasCjCatalogBrowser::class)->canSearch($request->user(), $workspace),
             'cjPreview' => app(SaasCjCatalogBrowser::class)->preview($request->user(), $workspace, $request->query('cj_preview')),
             'cjPreviewKey' => (string) $request->query('cj_preview', ''),
