@@ -21,6 +21,7 @@ class SaasCjConnection extends Model
         'refresh_token_expires_at' => 'datetime',
         'last_auth_attempt_at' => 'datetime',
         'last_product_fetch_at' => 'datetime',
+        'last_details_fetch_at' => 'datetime',
     ];
 
     protected $hidden = ['api_key', 'access_token', 'refresh_token', 'last_error_code'];
