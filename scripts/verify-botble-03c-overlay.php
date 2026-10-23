@@ -15,6 +15,9 @@ if (!mkdir($home, 0700, true) || !mkdir($plugin, 0700, true)) {
     throw new RuntimeException('Cannot create isolated test environment.');
 }
 $zip = new ZipArchive();
+if (!mkdir($testRoot.'/release', 0700, true)) {
+    throw new RuntimeException('Cannot create isolated extraction directory.');
+}
 if ($zip->open($package) !== true || !$zip->extractTo($testRoot.'/release') || !$zip->close()) {
     throw new RuntimeException('Cannot extract test overlay ZIP.');
 }
