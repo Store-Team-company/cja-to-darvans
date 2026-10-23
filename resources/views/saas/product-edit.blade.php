@@ -192,19 +192,44 @@
         </section>
 
         <section id="publishing" class="card catalog-editor-section">
-            <h2>Botble publishing</h2>
-            <p class="micro">Publishing is disabled until the signed, customer-scoped Botble product delivery endpoint is implemented and verified.</p>
-            <button type="button" class="btn" disabled>Push to Botble — not available yet</button>
+            <h2>Botble draft delivery</h2>
+            <p class="micro">Stage one reviewed product in your connected Botble store's private <strong>Incoming Products</strong> inbox. This is not a native Botble product creation or public publication action.</p>
+            <p class="catalog-note">The connector's native import currently requires separate Botble-admin approval. Image-bearing items and unverified variation mappings cannot be imported natively until the next compatibility release. A signed delivery acknowledgement means staged for review, not published.</p>
+            @error('botble_delivery')<div class="alert" role="alert" style="margin-top:10px">{{ $message }}</div>@enderror
             <div class="mt">
             @forelse($stores as $store)
-                <div class="split" style="padding:10px 0;border-top:1px solid #e5e7eb">
-                    <div><strong>{{ $store->name }}</strong><div class="micro">{{ $store->base_url }}</div></div>
-                    <span class="tag {{ $store->status === 'connected' ? 'good' : 'off' }}">{{ ucfirst($store->status) }}</span>
+                @php
+                    $sent = \App\Models\SaasBotbleProductDelivery::query()
+                        ->where('product_id', $product->id)->where('store_id', $store->id)->first();
+                    $canStage = app(\App\Services\Saas\SaasBotbleDraftDelivery::class)
+                        ->allowed(auth()->user(), $workspace, $product, $store);
+                @endphp
+                <div style="padding:13px 0;border-top:1px solid #e5e7eb">
+                    <div class="split">
+                        <div><strong>{{ $store->name }}</strong><div class="micro">{{ $store->base_url }}</div></div>
+                        <span class="tag {{ $store->status === 'connected' ? 'good' : 'off' }}">{{ ucfirst($store->status) }}</span>
+                    </div>
+                    @if($sent)
+                        <p class="micro">Last delivery: <strong>{{ str_replace('_', ' ', ucfirst($sent->status)) }}</strong>
+                            @if($sent->remote_draft_id) · Botble inbox #{{ $sent->remote_draft_id }} @endif
+                            · Attempts: {{ $sent->attempts }}</p>
+                    @endif
+                    @if($canStage)
+                    <form method="post" action="{{ route('saas.workspace.products.botble.stage', [
+                            'workspace'=>$workspace->public_id,'product'=>$product->id,'store'=>$store->id
+                        ]) }}" onsubmit="return confirm('Send this reviewed product to the Botble private Incoming Products inbox? This does not publish it.');">
+                        @csrf
+                        <button type="submit" class="btn btn-primary">Stage for Botble review</button>
+                    </form>
+                    @else
+                    <p class="micro">Draft delivery is disabled or this store is not the approved first-party sandbox. No request will be sent.</p>
+                    @endif
                 </div>
             @empty
                 <p class="micro">No Botble stores connected to this workspace.</p>
             @endforelse
             </div>
+            <button type="button" class="btn" disabled>Publish to Botble — not available yet</button>
         </section>
         <div class="catalog-editor-footer">
             <div class="flex"><button class="btn btn-primary" type="submit" form="customer-product-form">Save product</button>
