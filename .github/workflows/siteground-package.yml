@@ -142,7 +142,7 @@ jobs:
       - name: Upload Botble plugin artifact
         uses: actions/upload-artifact@v4
         with:
-          name: datapilot-botble-connector-0.3.1
-          path: dist/datapilot-connector-0.3.1.zip
+          name: datapilot-botble-connector-0.3.3
+          path: dist/datapilot-connector-0.3.3.zip
           retention-days: 14
           if-no-files-found: error
