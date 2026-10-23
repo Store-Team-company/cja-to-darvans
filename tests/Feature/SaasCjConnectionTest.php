@@ -220,7 +220,7 @@ class SaasCjConnectionTest extends TestCase
     public function test_invalid_cj_key_is_never_flashed_into_session_or_html(): void
     {
         [$owner, $workspace] = $this->fixture();
-        $key = 'private-short-key';
+        $key = 'too-short';
         $response = $this->actingAs($owner)->post($this->endpoint($workspace, 'save'), [
             'api_key' => $key,
         ]);
