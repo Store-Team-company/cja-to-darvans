@@ -155,7 +155,7 @@ echo "PASS: dirty source tree refused.\n";
 
 [$status, $output] = billing03Run(['--apply', '--backup-confirmed', '--expected-head='.$sha]);
 billing03Assert($status === 0 && str_contains($output, 'BILLING-03 optional admin grants installed'), 'Sandbox apply failed: '.$output);
-billing03Assert(str_contains($output, '2026_10_23_000008_add_saas_cj_product_fetch_throttle.php'),
+billing03Assert(str_contains($output, '2026_10_23_000009_create_saas_admin_plan_grants.php'),
     'Additive migration not dispatched');
 preg_match('/Private rollback backup: ([^\n]+)/', $output, $matches);
 $backup = $matches[1] ?? '';
