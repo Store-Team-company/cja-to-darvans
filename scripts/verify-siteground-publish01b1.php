@@ -107,17 +107,17 @@ p01b1Write($unexpected, '<?php // unknown SiteGround file');
 p01b1Reject(['--check'], 'SiteGround customization in '.$added[0]);
 unlink($unexpected);
 
-$path = $target.'/routes/saas.php';
-rename($path, $target.'/routes/unlinked-saas.php');
+$path = $target.'/app/Services/Saas/SaasBotbleDraftDelivery.php';
+rename($path, $target.'/app/Services/Saas/unlinked-delivery.php');
 symlink($target.'/routes/api.php', $path);
-p01b1Reject(['--check'], 'Missing/unsafe source or symlink: routes/saas.php');
+p01b1Reject(['--check'], 'Missing/unsafe source or symlink: app/Services/Saas/SaasBotbleDraftDelivery.php');
 unlink($path);
-rename($target.'/routes/unlinked-saas.php', $path);
+rename($target.'/app/Services/Saas/unlinked-delivery.php', $path);
 echo "PASS: customizations, unknown files, and symlink protected.\n";
 
 [$status, $out] = p01b1Run(['--apply', '--backup-confirmed', '--expected-head='.$sha]);
 p01b1Assert($status === 0 && str_contains($out, 'PASS: BOTBLE-PUBLISH-01B1 signed complete-variant staging code'), 'Safe offline apply failed: '.$out);
-p01b1Assert(str_contains($out, '2026_10_23_000012_create_saas_botble_product_deliveries.php'), 'Migration was not dispatched');
+p01b1Assert(!str_contains($out, 'Running migrations'), 'No schema migration is permitted in this sender update');
 preg_match('/Private rollback backup: ([^\n]+)/', $out, $matched);
 $backup = $matched[1] ?? '';
 p01b1Assert(is_dir($backup) && !str_contains($backup, '/public_html/'), 'Backup outside public root');
@@ -136,4 +136,4 @@ foreach ($protected as $path) {
 foreach ($added as $path) {
     p01b1Assert(str_contains(file_get_contents($backup.'/ADDED_FILES.txt'), $path), 'Rollback listing missing '.$path);
 }
-echo "PASS: protected offline install, migration, exact backups and no unrelated file changes.\n";
+echo "PASS: protected offline install, exact backups and no unrelated file changes.\n";
