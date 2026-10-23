@@ -39,19 +39,19 @@ final class SaasBotbleDraftDelivery
     }
 
     /** @return array{status:string,draft_id:?int} */
-    public function stage(User $actor, SaasWorkspace $workspace, SaasProduct $product, SaasBotbleStore $store): array
+    public function stage(User $actor, SaasWorkspace $workspace, SaasProduct $product, SaasBotbleStore $store, bool $uniformPriceConfirmed = false): array
     {
         if ($product->workspace_id !== $workspace->id || $store->workspace_id !== $workspace->id) {
             abort(404);
         }
         abort_unless($this->allowed($actor, $workspace, $product, $store), 403);
 
-        $reservation = DB::transaction(function () use ($actor, $workspace, $product, $store): array {
+        $reservation = DB::transaction(function () use ($actor, $workspace, $product, $store, $uniformPriceConfirmed): array {
             $lockedWorkspace = SaasWorkspace::query()->whereKey($workspace->id)->lockForUpdate()->firstOrFail();
             $lockedProduct = $lockedWorkspace->products()->whereKey($product->id)->lockForUpdate()->firstOrFail();
             $lockedStore = $lockedWorkspace->stores()->whereKey($store->id)->lockForUpdate()->firstOrFail();
             abort_unless($this->allowed($actor, $lockedWorkspace, $lockedProduct, $lockedStore), 403);
-            $draftData = $this->draftData($lockedProduct);
+            $draftData = $this->draftData($lockedProduct, $uniformPriceConfirmed);
             $sourceHash = hash('sha256', json_encode($draftData, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
             $delivery = SaasBotbleProductDelivery::query()
                 ->where('product_id', $lockedProduct->id)
@@ -79,7 +79,7 @@ final class SaasBotbleDraftDelivery
             // idempotency key. The connector returns 200 for same-body replays.
             $draftData = ['idempotency_key' => $delivery->idempotency_key] + $draftData;
             $body = json_encode($draftData, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-            if (strlen($body) > 65536) {
+            if (strlen($body) > (isset($draftData['schema_version']) ? 262144 : 65536)) {
                 throw new SaasBotbleDeliveryException('payload_too_large');
             }
             $delivery->payload_json = $body;
@@ -176,7 +176,7 @@ final class SaasBotbleDraftDelivery
         return ['status' => 'staged_for_review', 'draft_id' => $record->remote_draft_id];
     }
 
-    private function draftData(SaasProduct $product): array
+    private function draftData(SaasProduct $product, bool $uniformPriceConfirmed = false): array
     {
         if (!filled($product->cj_product_id) || !filled($product->sku)
             || !filled($product->title) || !$product->cj_details_fetched_at
@@ -184,10 +184,10 @@ final class SaasBotbleDraftDelivery
             || (float) $product->selling_price_usd <= 0) {
             throw new SaasBotbleDeliveryException('product_not_ready');
         }
-        // Supplier variants need a confirmed Botble attribute mapping.
-        // Never silently omit them and create a misleading simple product.
+        // Protocol v2: require an explicit review of one uniform retail price
+        // for ALL source variants; never take variant supplier cost as price.
         if (count($product->source_variants ?? []) > 0) {
-            throw new SaasBotbleDeliveryException('variants_not_supported');
+            return app(SaasBotbleVariantDraftPayload::class)->make($product, $uniformPriceConfirmed);
         }
         $safe = app(SaasProductHtmlSanitizer::class);
         $images = array_values(array_unique(array_filter(
