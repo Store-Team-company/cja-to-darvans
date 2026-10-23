@@ -30,6 +30,7 @@ class SaasPortalController extends Controller
             'canImportCj' => app(SaasCjCatalogBrowser::class)->canSearch($request->user(), $workspace),
             'cjPreview' => app(SaasCjCatalogBrowser::class)->preview($request->user(), $workspace, $request->query('cj_preview')),
             'cjPreviewKey' => (string) $request->query('cj_preview', ''),
+            'cjSavedIds' => $workspace->products()->pluck('cj_product_id')->all(),
             'cjView' => $request->query('view') === 'list' ? 'list' : 'grid',
         ]);
     }
