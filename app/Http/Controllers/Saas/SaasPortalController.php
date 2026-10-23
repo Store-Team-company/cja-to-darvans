@@ -5,7 +5,7 @@ namespace App\Http\Controllers\Saas;
 use App\Http\Controllers\Controller;
 use App\Models\SaasWorkspace;
 use App\Services\Saas\SaasEntitlements;
-use App\Services\Saas\SaasCjProductDraftImporter;
+use App\Services\Saas\SaasCjCatalogBrowser;
 use App\Services\Saas\WorkspacePermissions;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -27,7 +27,11 @@ class SaasPortalController extends Controller
     {
         return view('saas.products', $this->shared($request, $workspace) + [
             'products' => $workspace->products()->latest()->paginate(15),
-            'canImportCj' => app(SaasCjProductDraftImporter::class)->canImport($request->user(), $workspace),
+            'canImportCj' => app(SaasCjCatalogBrowser::class)->canSearch($request->user(), $workspace),
+            'cjPreview' => app(SaasCjCatalogBrowser::class)->preview($request->user(), $workspace, $request->query('cj_preview')),
+            'cjPreviewKey' => (string) $request->query('cj_preview', ''),
+            'cjSavedIds' => $workspace->products()->pluck('cj_product_id')->all(),
+            'cjView' => $request->query('view') === 'list' ? 'list' : 'grid',
         ]);
     }
 

@@ -56,8 +56,10 @@ Route::prefix('app')->middleware([EnsureSaasEnabled::class])->name('saas.')->gro
                 ->name('workspace.')->group(function () {
                     Route::get('/', [WorkspaceDashboardController::class, 'show'])->name('dashboard');
                     Route::get('/products', [SaasPortalController::class, 'products'])->name('products');
-                    Route::post('/products/cj/fetch', [SaasCjProductController::class, 'fetch'])
-                        ->middleware('throttle:3,1')->name('products.cj.fetch');
+                    Route::post('/products/cj/search', [SaasCjProductController::class, 'search'])
+                        ->middleware('throttle:3,1')->name('products.cj.search');
+                    Route::post('/products/cj/import', [SaasCjProductController::class, 'import'])
+                        ->middleware('throttle:10,1')->name('products.cj.import');
                     Route::get('/connections', [SaasPortalController::class, 'connections'])->name('connections');
                     Route::post('/connections/cj', [SaasConnectionController::class, 'saveCj'])
                         ->middleware([EnsureSaasEntitlement::class.':connect_cj', 'throttle:6,1'])

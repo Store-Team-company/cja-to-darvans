@@ -4,8 +4,9 @@ namespace Tests\Feature;
 
 use App\Models\SaasWorkspace;
 use App\Models\User;
+use App\Services\Saas\SaasCjCatalogBrowser;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
@@ -18,10 +19,12 @@ final class SaasCjProductDraftImportTest extends TestCase
         parent::setUp();
         config()->set('saas.enabled', true);
         config()->set('saas.billing_enabled', false);
+        config()->set('saas.admin_grants_enabled', false);
         config()->set('saas.registration_enabled', false);
-        config()->set('saas.cj_pilot.enabled', false);
         config()->set('saas.cj_draft_import_enabled', true);
+        config()->set('saas.cj_pilot.enabled', false);
         Http::preventStrayRequests();
+        Cache::clear();
     }
 
     private function fixture(): array
@@ -35,10 +38,9 @@ final class SaasCjProductDraftImportTest extends TestCase
         config()->set('saas.cj_pilot', ['enabled' => true, 'workspace_id' => $workspace->public_id]);
 
         $connection = $workspace->cjConnections()->create([
-            'status' => 'connected',
-            'last_verified_at' => now(),
+            'status' => 'connected', 'last_verified_at' => now(),
         ]);
-        $connection->access_token = 'synthetic-cj-access-token-that-must-never-display';
+        $connection->access_token = 'synthetic-cj-access-token-private';
         $connection->refresh_token = 'synthetic-refresh-token-private';
         $connection->access_token_expires_at = now()->addDays(10);
         $connection->refresh_token_expires_at = now()->addDays(20);
@@ -48,11 +50,6 @@ final class SaasCjProductDraftImportTest extends TestCase
         return [$owner, $workspace, $connection];
     }
 
-    private function url(SaasWorkspace $workspace): string
-    {
-        return route('saas.workspace.products.cj.fetch', $workspace->public_id);
-    }
-
     private function product(string $id = 'CJ-PRODUCT-001', string $title = 'Safe test tablecloth'): array
     {
         return [
@@ -60,7 +57,7 @@ final class SaasCjProductDraftImportTest extends TestCase
             'bigImage' => 'https://example.test/images/tablecloth.jpg',
             'sellPrice' => '18.50', 'nowPrice' => '15.25',
             'threeCategoryName' => 'Table Linens',
-            'description' => '<script>provider html never persisted</script>',
+            'description' => '<script>untrusted description</script>',
             'untrustedCredential' => 'SHOULD-NOT-BE-SAVED',
         ];
     }
@@ -69,192 +66,201 @@ final class SaasCjProductDraftImportTest extends TestCase
     {
         return [
             'code' => 200, 'result' => true, 'message' => 'Success',
-            'data' => [
-                'pageSize' => 10, 'pageNumber' => 1,
-                'content' => [['productList' => $products]],
-            ],
+            'data' => ['totalRecords' => 6000, 'pageSize' => 20, 'pageNumber' => 1,
+                'content' => [['productList' => $products]]],
         ];
     }
 
-    private function fetch(User $owner, SaasWorkspace $workspace, string $keyword = 'tablecloth'): \Illuminate\Testing\TestResponse
+    private function search(User $actor, SaasWorkspace $workspace, array $overrides = []): \Illuminate\Testing\TestResponse
     {
-        return $this->actingAs($owner)->post($this->url($workspace), [
-            'keyword' => $keyword, 'page' => 1,
-        ]);
+        return $this->actingAs($actor)->post(
+            route('saas.workspace.products.cj.search', $workspace->public_id),
+            array_replace([
+                'mode' => 'search', 'keyword' => 'tablecloth', 'page' => 1, 'size' => 20,
+                'country_code' => 'US', 'min_price' => 10, 'max_price' => 80,
+                'order_by' => 2, 'sort' => 'asc', 'view' => 'grid',
+            ], $overrides)
+        );
     }
 
-    public function test_owner_imports_product_drafts_using_exact_fixed_cj_v2_endpoint(): void
+    private function previewKey(\Illuminate\Testing\TestResponse $response): string
     {
-        [$owner, $workspace, $connection] = $this->fixture();
-        Http::fake(['developers.cjdropshipping.com/*' => Http::response(
-            $this->success([$this->product(), $this->product('CJ-PRODUCT-002', 'Other linen')]), 200
-        )]);
-
-        $this->fetch($owner, $workspace)->assertRedirect()->assertSessionHas('cj_product_import');
-        $this->assertSame(2, $workspace->products()->count());
-        $product = $workspace->products()->where('cj_product_id', 'CJ-PRODUCT-001')->firstOrFail();
-        $this->assertSame('draft', $product->status);
-        $this->assertSame('Safe test tablecloth', $product->title);
-        $this->assertSame('18.50', $product->source_snapshot['sell_price_usd']);
-        $this->assertSame('15.25', $product->source_snapshot['discount_price_usd']);
-        $this->assertArrayNotHasKey('untrustedCredential', $product->source_snapshot);
-        $this->assertArrayNotHasKey('description', $product->source_snapshot);
-        $this->assertNotNull($connection->fresh()->last_product_fetch_at);
-
-        Http::assertSent(fn ($request) => $request->method() === 'GET'
-            && str_starts_with($request->url(), 'https://developers.cjdropshipping.com/api2.0/v1/product/listV2?')
-            && $request->hasHeader('CJ-Access-Token', 'synthetic-cj-access-token-that-must-never-display')
-            && str_contains($request->url(), 'keyWord=tablecloth')
-            && str_contains($request->url(), 'size=10'));
-
-        $this->actingAs($owner)->get(route('saas.workspace.products', $workspace->public_id))
-            ->assertOk()->assertSee('Safe test tablecloth')->assertSee('18.50')
-            ->assertDontSee('synthetic-cj-access-token-that-must-never-display')
-            ->assertDontSee('SHOULD-NOT-BE-SAVED');
+        $query = parse_url($response->headers->get('Location'), PHP_URL_QUERY);
+        parse_str($query ?: '', $params);
+        return (string) ($params['cj_preview'] ?? '');
     }
 
-    public function test_duplicate_cj_id_updates_draft_without_new_row_or_overwriting_approved_entry(): void
+    private function import(User $actor, SaasWorkspace $workspace, string $key, array $ids): \Illuminate\Testing\TestResponse
     {
-        [$owner, $workspace, $connection] = $this->fixture();
-        $workspace->products()->create([
-            'cj_product_id' => 'CJ-PRODUCT-001',
-            'title' => 'Original title', 'status' => 'draft',
-        ]);
-        Http::fake(['developers.cjdropshipping.com/*' => Http::response(
-            $this->success([$this->product()]), 200
-        )]);
-        $this->fetch($owner, $workspace)->assertSessionHas('cj_product_import');
-        $this->assertSame(1, $workspace->products()->count());
-        $this->assertSame('Safe test tablecloth', $workspace->products()->first()->title);
-
-        $workspace->products()->first()->forceFill(['status' => 'approved', 'title' => 'Reviewed by merchant'])->save();
-        $connection->forceFill(['last_product_fetch_at' => now()->subMinutes(2)])->save();
-        $this->fetch($owner, $workspace)->assertSessionHas('cj_product_import');
-        $this->assertSame('Reviewed by merchant', $workspace->products()->first()->title);
-        $this->assertSame('approved', $workspace->products()->first()->status);
-        $this->assertSame(1, $workspace->products()->count());
+        return $this->actingAs($actor)->post(
+            route('saas.workspace.products.cj.import', $workspace->public_id),
+            ['cj_preview' => $key, 'items' => $ids, 'view' => 'grid']
+        );
     }
 
-    public function test_import_is_never_enabled_by_default_or_when_pilot_is_not_pinned(): void
+    public function test_search_does_not_import_and_selected_only_creates_private_drafts(): void
     {
         [$owner, $workspace] = $this->fixture();
-        config()->set('saas.cj_draft_import_enabled', false);
-        $this->fetch($owner, $workspace)->assertForbidden();
-        $this->actingAs($owner)->get(route('saas.workspace.products', $workspace->public_id))
-            ->assertOk()->assertDontSee('Fetch and save CJ drafts');
+        Http::fake(['developers.cjdropshipping.com/*' => Http::response(
+            $this->success([$this->product(), $this->product('CJ-PRODUCT-002', 'Second draft')]), 200
+        )]);
 
-        config()->set('saas.cj_draft_import_enabled', true);
-        config()->set('saas.cj_pilot.workspace_id', 'different-workspace-uuid');
-        $this->fetch($owner, $workspace)->assertForbidden();
-        Http::assertNothingSent();
+        $response = $this->search($owner, $workspace);
+        $response->assertRedirect();
+        $key = $this->previewKey($response);
+        $this->assertMatchesRegularExpression('/^[a-f0-9]{40}$/D', $key);
         $this->assertDatabaseCount('saas_products', 0);
+        $this->actingAs($owner)->get(route('saas.workspace.products', [
+            'workspace' => $workspace->public_id, 'cj_preview' => $key,
+        ]))->assertOk()->assertSee('Safe test tablecloth')->assertSee('Second draft')
+            ->assertSee('Import selected as drafts')
+            ->assertDontSee('synthetic-cj-access-token-private')
+            ->assertDontSee('SHOULD-NOT-BE-SAVED');
+
+        $this->import($owner, $workspace, $key, ['CJ-PRODUCT-002'])
+            ->assertRedirect()->assertSessionHas('cj_product_import');
+        $this->assertSame(1, $workspace->products()->count());
+        $this->assertFalse($workspace->products()->where('cj_product_id', 'CJ-PRODUCT-001')->exists());
+        $saved = $workspace->products()->firstOrFail();
+        $this->assertSame('CJ-PRODUCT-002', $saved->cj_product_id);
+        $this->assertSame('draft', $saved->status);
+        $this->assertArrayNotHasKey('description', $saved->source_snapshot);
+        $this->assertArrayNotHasKey('untrustedCredential', $saved->source_snapshot);
+        Http::assertSentCount(1);
+        Http::assertSent(fn ($req) => $req->method() === 'GET'
+            && str_contains($req->url(), '/api2.0/v1/product/listV2?')
+            && str_contains($req->url(), 'countryCode=US')
+            && str_contains($req->url(), 'startSellPrice=10')
+            && str_contains($req->url(), 'endSellPrice=80')
+            && str_contains($req->url(), 'size=20'));
     }
 
-    public function test_other_tenants_viewers_and_unapproved_customers_cannot_import_or_read_drafts(): void
+    public function test_bulk_import_uses_exact_preview_selection_without_overwriting_approved_products(): void
     {
         [$owner, $workspace] = $this->fixture();
-        $viewer = User::factory()->create(['email_verified_at' => now()]);
-        $workspace->members()->attach($viewer->id, ['role' => 'viewer', 'status' => 'active']);
-        $other = User::factory()->create(['email_verified_at' => now()]);
-        $second = SaasWorkspace::create(['name' => 'Another tenant']);
-        $second->forceFill(['status' => 'active'])->save();
-        $second->members()->attach($other->id, ['role' => 'owner', 'status' => 'active']);
-        $workspace->products()->create([
-            'cj_product_id' => 'PRIVATE-CJ-100', 'title' => 'Top secret draft', 'status' => 'draft',
-        ]);
-
-        $this->fetch($viewer, $workspace)->assertForbidden();
-        $this->fetch($other, $second)->assertForbidden();
-        $this->fetch($other, $workspace)->assertNotFound();
-        $this->actingAs($other)->get(route('saas.workspace.products', $workspace->public_id))
-            ->assertNotFound();
-        $this->actingAs($viewer)->get(route('saas.workspace.products', $workspace->public_id))
-            ->assertOk()->assertSee('Top secret draft')
-            ->assertDontSee('Fetch and save CJ drafts');
-        Http::assertNothingSent();
-    }
-
-    public function test_disconnected_expired_token_or_suspended_workspace_never_calls_cj(): void
-    {
-        [$owner, $workspace, $connection] = $this->fixture();
-        $connection->forceFill(['status' => 'disconnected'])->save();
-        $this->fetch($owner, $workspace)->assertForbidden();
-        $connection->forceFill(['status' => 'connected', 'access_token_expires_at' => now()->subMinute()])->save();
-        $this->fetch($owner, $workspace)->assertForbidden();
-
-        $connection->forceFill(['access_token_expires_at' => now()->addDay()])->save();
-        $workspace->forceFill(['status' => 'suspended'])->save();
-        $this->fetch($owner, $workspace)->assertNotFound();
-        Http::assertNothingSent();
-    }
-
-    public function test_cj_search_is_rate_limited_for_sixty_seconds_without_extra_provider_calls(): void
-    {
-        [$owner, $workspace] = $this->fixture();
-        Http::fake(['developers.cjdropshipping.com/*' => Http::response($this->success([]), 200)]);
-        $this->fetch($owner, $workspace)->assertSessionHas('cj_product_import');
-        $this->fetch($owner, $workspace)->assertSessionHasErrors('cj_product');
+        $workspace->products()->create(['cj_product_id' => 'CJ-PRODUCT-001', 'title' => 'Approved',
+            'status' => 'approved']);
+        Http::fake(['developers.cjdropshipping.com/*' => Http::response(
+            $this->success([$this->product(), $this->product('CJ-PRODUCT-002', 'Other')]), 200
+        )]);
+        $key = $this->previewKey($this->search($owner, $workspace));
+        $this->import($owner, $workspace, $key, ['CJ-PRODUCT-001', 'CJ-PRODUCT-002'])
+            ->assertSessionHas('cj_product_import');
+        $this->assertSame(2, $workspace->products()->count());
+        $this->assertSame('Approved', $workspace->products()->where('cj_product_id', 'CJ-PRODUCT-001')->firstOrFail()->title);
+        $this->assertSame('draft', $workspace->products()->where('cj_product_id', 'CJ-PRODUCT-002')->firstOrFail()->status);
         Http::assertSentCount(1);
     }
 
-    public function test_malformed_provider_response_is_rejected_without_partial_drafts(): void
+    public function test_tampered_missing_or_expired_search_preview_never_imports(): void
+    {
+        [$owner, $workspace] = $this->fixture();
+        Http::fake(['developers.cjdropshipping.com/*' => Http::response($this->success([$this->product()]), 200)]);
+        $key = $this->previewKey($this->search($owner, $workspace));
+        $this->import($owner, $workspace, $key, ['FORGED-ID'])->assertSessionHasErrors('cj_product');
+        $this->import($owner, $workspace, $key, ['CJ-PRODUCT-001', 'CJ-PRODUCT-001'])->assertSessionHasErrors('cj_product');
+        $this->travel(16)->minutes();
+        $this->import($owner, $workspace, $key, ['CJ-PRODUCT-001'])->assertSessionHasErrors('cj_product');
+        $this->assertDatabaseCount('saas_products', 0);
+    }
+
+    public function test_another_user_cannot_reuse_private_search_even_in_same_workspace(): void
+    {
+        [$owner, $workspace] = $this->fixture();
+        $manager = User::factory()->create(['email_verified_at' => now()]);
+        $workspace->members()->attach($manager->id, ['role' => 'manager', 'status' => 'active']);
+        Http::fake(['developers.cjdropshipping.com/*' => Http::response($this->success([$this->product()]), 200)]);
+        $key = $this->previewKey($this->search($owner, $workspace));
+        $this->actingAs($manager)->get(route('saas.workspace.products', [
+            'workspace' => $workspace->public_id, 'cj_preview' => $key,
+        ]))->assertOk()->assertDontSee('Safe test tablecloth');
+        $this->import($manager, $workspace, $key, ['CJ-PRODUCT-001'])->assertForbidden();
+        $this->assertDatabaseCount('saas_products', 0);
+    }
+
+    public function test_denies_other_tenant_viewer_disconnected_and_disabled_before_cj_call(): void
+    {
+        [$owner, $workspace, $connection] = $this->fixture();
+        $viewer = User::factory()->create(['email_verified_at' => now()]);
+        $workspace->members()->attach($viewer->id, ['role' => 'viewer', 'status' => 'active']);
+        $other = User::factory()->create(['email_verified_at' => now()]);
+        $otherWorkspace = SaasWorkspace::create(['name' => 'Another tenant']);
+        $otherWorkspace->forceFill(['status' => 'active'])->save();
+        $otherWorkspace->members()->attach($other->id, ['role' => 'owner', 'status' => 'active']);
+
+        $this->search($viewer, $workspace)->assertForbidden();
+        $this->search($other, $workspace)->assertNotFound();
+        $this->search($other, $otherWorkspace)->assertForbidden();
+        $connection->forceFill(['status' => 'disconnected'])->save();
+        $this->search($owner, $workspace)->assertForbidden();
+        $connection->forceFill(['status' => 'connected'])->save();
+        config()->set('saas.cj_draft_import_enabled', false);
+        $this->search($owner, $workspace)->assertForbidden();
+        Http::assertNothingSent();
+    }
+
+    public function test_second_search_during_cooldown_returns_error_without_another_provider_call(): void
+    {
+        [$owner, $workspace] = $this->fixture();
+        Http::fake(['developers.cjdropshipping.com/*' => Http::response($this->success([]), 200)]);
+        $this->search($owner, $workspace)->assertRedirect();
+        $this->search($owner, $workspace)->assertSessionHasErrors('cj_product');
+        Http::assertSentCount(1);
+    }
+
+    public function test_credential_rotation_between_preview_and_import_cannot_save_stale_results(): void
+    {
+        [$owner, $workspace, $connection] = $this->fixture();
+        Http::fake(['developers.cjdropshipping.com/*' => Http::response($this->success([$this->product()]), 200)]);
+        $key = $this->previewKey($this->search($owner, $workspace));
+        $connection->forceFill(['credential_revision' => 4])->save();
+        $this->import($owner, $workspace, $key, ['CJ-PRODUCT-001'])->assertSessionHasErrors('cj_product');
+        $this->assertDatabaseCount('saas_products', 0);
+    }
+
+    public function test_direct_pid_lookup_is_preview_only_then_user_selects_product(): void
     {
         [$owner, $workspace] = $this->fixture();
         Http::fake(['developers.cjdropshipping.com/*' => Http::response([
-            'code' => 200, 'result' => true, 'data' => [
-                'content' => [
-                    ['productList' => [$this->product()]],
-                    ['productList' => [['id' => 'BROKEN', 'nameEn' => null]]],
-                ],
-            ],
+            'code' => 200, 'result' => true,
+            'data' => ['pid' => 'PID-0001', 'productNameEn' => 'Exact tablecloth',
+                'productSku' => 'CJ-PRODUCT-SKU-1', 'bigImage' => 'https://example.test/item.jpg'],
         ], 200)]);
-        $this->fetch($owner, $workspace)->assertSessionHasErrors('cj_product');
-        $this->assertDatabaseCount('saas_products', 0);
+        $response = $this->search($owner, $workspace, [
+            'mode' => 'direct', 'id_type' => 'pid', 'identifier' => 'PID-0001',
+        ]);
+        $key = $this->previewKey($response);
+        $this->assertSame(0, $workspace->products()->count());
+        $this->import($owner, $workspace, $key, ['PID-0001'])->assertSessionHas('cj_product_import');
+        $this->assertSame(1, $workspace->products()->count());
+        Http::assertSent(fn ($r) => str_contains($r->url(), '/api2.0/v1/product/query?pid=PID-0001'));
     }
 
-    public function test_provider_unauthorized_or_rate_limited_cannot_create_drafts(): void
-    {
-        [$owner, $workspace, $connection] = $this->fixture();
-        Http::fake(['developers.cjdropshipping.com/*' => Http::response([], 401)]);
-        $this->fetch($owner, $workspace)->assertSessionHasErrors('cj_product');
-        $connection->forceFill(['last_product_fetch_at' => now()->subMinutes(2)])->save();
-        Http::fake(['developers.cjdropshipping.com/*' => Http::response([], 429)]);
-        $this->fetch($owner, $workspace)->assertSessionHasErrors('cj_product');
-        $this->assertDatabaseCount('saas_products', 0);
-    }
-
-    public function test_revoking_or_rotating_cj_connection_during_fetch_cannot_store_stale_data(): void
-    {
-        [$owner, $workspace, $connection] = $this->fixture();
-        Http::fake(['developers.cjdropshipping.com/*' => function ($request) use ($connection) {
-            $connection->forceFill([
-                'credential_revision' => $connection->credential_revision + 1,
-                'status' => 'pending_verification',
-                'access_token' => null,
-            ])->save();
-            return Http::response($this->success([$this->product()]), 200);
-        }]);
-        $this->fetch($owner, $workspace)->assertSessionHasErrors('cj_product');
-        $this->assertDatabaseCount('saas_products', 0);
-    }
-
-    public function test_pilot_cap_is_enforced_and_no_botble_data_is_touched(): void
+    public function test_malformed_cj_response_and_invalid_search_filters_never_save(): void
     {
         [$owner, $workspace] = $this->fixture();
-        for ($i = 1; $i <= 49; $i++) {
-            $workspace->products()->create([
-                'title' => 'Existing draft '.$i,
-                'cj_product_id' => 'SAVED-'.$i,
-                'status' => 'draft',
-            ]);
+        $this->search($owner, $workspace, ['size' => 100])->assertSessionHasErrors('size');
+        Http::assertNothingSent();
+        Http::fake(['developers.cjdropshipping.com/*' => Http::response([
+            'code' => 200, 'result' => true,
+            'data' => ['content' => [['productList' => [['id' => 'BAD', 'nameEn' => null]]]]],
+        ], 200)]);
+        $this->search($owner, $workspace)->assertSessionHasErrors('cj_product');
+        $this->assertDatabaseCount('saas_products', 0);
+    }
+
+    public function test_workspace_pilot_capacity_and_plan_limits_still_enforced_on_selected_import(): void
+    {
+        [$owner, $workspace] = $this->fixture();
+        for ($i = 0; $i < 49; $i++) {
+            $workspace->products()->create(['cj_product_id' => 'EXISTING-'.$i, 'title' => 'Old '.$i, 'status' => 'draft']);
         }
-        Http::fake(['developers.cjdropshipping.com/*' => Http::response(
-            $this->success([$this->product('NEW-A', 'Allowed'), $this->product('NEW-B', 'Skipped limit')]), 200
-        )]);
-        $this->fetch($owner, $workspace)->assertSessionHas('cj_product_import');
+        Http::fake(['developers.cjdropshipping.com/*' => Http::response($this->success([
+            $this->product('NEW-1', 'First'), $this->product('NEW-2', 'Second'),
+        ]), 200)]);
+        $key = $this->previewKey($this->search($owner, $workspace));
+        $this->import($owner, $workspace, $key, ['NEW-1', 'NEW-2'])->assertSessionHas('cj_product_import');
         $this->assertSame(50, $workspace->products()->count());
-        $this->assertDatabaseCount('saas_botble_stores', 0);
-        $this->assertSame('draft', $workspace->products()->where('cj_product_id', 'NEW-A')->firstOrFail()->status);
-        $this->assertFalse($workspace->products()->where('cj_product_id', 'NEW-B')->exists());
+        $this->assertFalse($workspace->products()->where('cj_product_id', 'NEW-2')->exists());
     }
 }
