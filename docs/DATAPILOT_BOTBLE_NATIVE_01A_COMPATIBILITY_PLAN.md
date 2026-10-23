@@ -1,0 +1,41 @@
+# DATAPILOT-BOTBLE-NATIVE-01A — Controlled Native Draft Import (Design / Runtime Gate)
+
+**Status:** DESIGN / COMPATIBILITY GATE ONLY. NO NATIVE CATALOG WRITE APPROVED.
+
+## Verified against the actual sandbox.daystart.pk installation (2026-10-23)
+
+- Botble Ecommerce **3.11.9**, Laravel **13.13.0**, DataPilot Connector **0.3.3** receiving signed protocol-v2.
+- Inbox draft **ID 1**, CJ product `2505090210081629800`, status `pending_review`, 40/40 variations and 20 gallery URLs, effective price USD **80.00**.
+- Product was edited with regular selling price USD **120.00**, sale price USD **80.00**, but protocol-v2 currently sends only the **effective** price. **DO NOT import 80 as an undiscounted regular price.**
+- The paired source product has no Botble native product mapping, as expected.
+- Observed tables: `ec_products`, `ec_product_variations`, `ec_product_variation_items`, `ec_product_attribute_sets`, `ec_product_attributes`, `ec_product_with_attribute_set`, `meta_boxes`.
+- Product columns include `price`, `sale_price`, `images`, `image`, `status`, `stock_status`, `with_storehouse_management`, `allow_checkout_when_out_of_stock`, `is_variation` and `weight`.
+- Native `ProductVariation::getVariationByAttributesOrCreate` and `Product::productAttributeSets` methods are present; signatures, return shape, side effects, transaction semantics and installed-media integration have **NOT** been verified.
+- Existing `CatalogImportService::approve()` hard-blocks protocol-v2 independent of the generic importer flag, limits its older variant path to 20, and blocks image-bearing drafts. **Do not remove these safeguards prematurely.**
+
+## Release split — preserve approved signed-transfer milestone
+
+1. **NATIVE-01A (this phase):** Exact-runtime read-only compatibility: inspect method signatures, local source implementations, required product/attribute columns, storage access and media APIs, slug model and SEO metadata contracts. Build deterministic 40-variation dry-run validation and negative tests. No product writes.
+2. **NATIVE-01B (contract upgrade):** Introduce a separately gated versioned *signed* envelope that retains **regular price and optional sale price**, with explicit reviewed, validated per-variation pricing. Do not redefine existing v2 meaning; legacy inbox draft remains read-only. Preserve per-store HMAC, nonce, timestamp, pairing, max payload, strict idempotency, owner confirmation and no cost/stock leakage. If separate variation prices are not yet configured, require explicit confirmation of a uniform regular/sale pair.
+3. **NATIVE-01C (media):** Secure CJ HTTPS media acquisition with allowlisted domains and IP/DNS pinning, no private/link-local addresses, no redirects to arbitrary hosts, TLS verification, strict content type, decoded-format / dimensions, file and aggregate limits. Use Botble's supported media storage mechanism, not ad-hoc public-file writes. Stage and validate required assets **before** native catalog DB transaction; ensure failed import cleans staged files. Never silently drop the main/gallery/variation images.
+4. **NATIVE-01D (catalog draft creation):** Admin-triggered, role-authorized, CSRF-protected importer with separate feature switch. Validate product uniqueness, source mappings, all unique CJ IDs/SKUs/options, existing SKU collisions, valid Botble attribute sets and IDs, 40 native variation records with correct parent relationship and option values, SEO record ownership, safe HTML, retail/sale prices and all local media references. Use Botble-native model APIs only after installed-version compatibility verified. Transaction with lock-based idempotency and rollback, no partial catalog records. Keep parent and child `status=draft`. Preserve preexisting manual products and mappings.
+5. **NATIVE-01E (acceptance):** Run exact-head CI + independent security QA. Use a disposable Botble instance / DB clone first, verify 1 parent + 40 children, gallery and variation media, prices (regular 120, sale 80), options, SEO, no missing images, no public storefront listing, no duplicates after retry, rollback on intentional failure. On live sandbox verify backups and deploy via hash-guarded overlay. Only then enable the precise separate native-v3 importer switch for the pinned store.
+
+## Non-negotiable invariants
+
+- Both currently live servers must retain signed delivery, HMAC verification, pairing and read-only incoming inbox behavior without regression.
+- NEVER flip `DATAPILOT_CATALOG_IMPORT_ENABLED` merely because the tables and method names exist.
+- Legacy protocol-v2 product draft **ID 1** remains review-only; native catalog import must require a new verified signed draft with explicit regular/sale semantics.
+- Only admins with `datapilot-connector.settings` permission may approve. No HTTP API route is allowed to write directly to Ecommerce.
+- Do not infer stock from CJ variation listing; until quantities are verified, keep drafts unpublishable and checkout disabled for any future publication.
+- Unknown Color/Size parsing is not allowed. Preserve original supplier attribute as `CJ Option` until human-reviewed mapping supports typed attributes.
+- Fail closed on unsupported native models/media/SEO APIs, collision, partial media, inconsistent pricing, >100 variations, modified signing key, or incomplete source data.
+- Do not claim production success from database schema existence or mocked tests.
+
+## Next exact-runtime information needed (read-only)
+
+Collect native helper reflection parameters and declaring path, complete schema column lists for attribute and variation tables, product image casts, and whether Botble Media facades / SEO metadata classes are loaded. Do not print secret values, full file paths containing credentials or existing customer data. Inspect method source **locally**, not a guess from a newer version's public documentation. Keep DB and catalog untouched.
+
+## Release controls
+
+All work behind feature branches, draft PRs, exact-HEAD CI, independent QA and only then guarded sandbox deployment. Initial branch is documentation and runtime readiness only; **no implementation/deployment was performed by this branch**.
