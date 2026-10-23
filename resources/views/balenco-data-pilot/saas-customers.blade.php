@@ -16,6 +16,7 @@
         Paid subscriptions are activated by verified Stripe webhooks, not by administrators.
     </p>
 </div>
+@endif
 <div class="bdp-card">
     <form method="get" action="{{ route('bdp.saas.customers') }}" class="bdp-toolbar">
         <label for="customer-search">Search customer email</label>
