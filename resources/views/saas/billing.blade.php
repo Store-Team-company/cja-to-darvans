@@ -18,7 +18,7 @@
         @if($adminGrant)
         <p class="micro">Admin-provided access until {{ $adminGrant->expires_at->format('M j, Y') }}. No payment was charged for this grant. You can purchase a paid subscription separately.</p>
         @endif
-        <p style="margin:0">Plan: <strong>{{ ucfirst($bill?->plan_code ?? 'None') }}</strong>
+        <p style="margin:0">Plan: <strong>{{ ucfirst($paidSubscription ? ($bill?->plan_code ?? 'None') : ($adminGrant?->plan_code ?? ($bill?->plan_code ?? 'None'))) }}</strong>
             @if($bill?->current_period_end) · Current period ends {{ $bill->current_period_end->format('M j, Y') }} @endif
             @if($bill?->cancel_at_period_end) · Scheduled to cancel @endif
         </p>
