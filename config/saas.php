@@ -28,6 +28,12 @@ return [
         'store_url' => env('SAAS_BOTBLE_PILOT_STORE_URL', ''),
     ],
 
+    // Signed delivery to the first-party sandbox Botble review inbox only.
+    // No automatic publication. Explicitly OFF until connector QA and approval.
+    'botble_draft_delivery' => [
+        'enabled' => (bool) env('SAAS_BOTBLE_DRAFT_DELIVERY_ENABLED', false),
+    ],
+
     // Stripe LIVE/TEST keys belong only in the server's private .env.
     // Price IDs must be created and configured in Stripe before checkout works.
     'stripe_secret' => env('STRIPE_SECRET_KEY', ''),
