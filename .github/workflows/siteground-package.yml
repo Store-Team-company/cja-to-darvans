@@ -30,6 +30,9 @@ on:
       - 'scripts/deploy-siteground-auth05.php'
       - 'scripts/deploy-siteground-botble04.php'
       - 'scripts/deploy-siteground-cj01.php'
+      - 'scripts/deploy-siteground-product01.php'
+      - 'scripts/verify-siteground-product01.php'
+      - 'docs/DATAPILOT_PRODUCT_01_CJ_DRAFT_IMPORT.md'
       - 'scripts/verify-siteground-cj01.php'
       - 'scripts/diagnose-siteground-cj01.php'
       - 'database/migrations/2026_10_23_000006_add_saas_cj_auth_state.php'
@@ -123,6 +126,10 @@ jobs:
         run: |
           git switch -c feature/datapilot-cj-01-secure-connection
           php scripts/verify-siteground-cj01.php
+      - name: Verify PRODUCT-01 selective SiteGround installer
+        run: |
+          git switch -c feature/datapilot-product-01-cj-draft-import
+          php scripts/verify-siteground-product01.php
       - name: Build and smoke-check incremental SaaS update
         run: |
           php scripts/build-siteground-saas-update.php
