@@ -1,6 +1,6 @@
 <?php
 
-/** BOTBLE-PUBLISH-01B1AA — Strict changes-only variant stage update to the signed DataPilot sender. */
+/** BOTBLE-PUBLISH-01B1A — Strict single-file store authorization UI hotfix. */
 declare(strict_types=1);
 
 if (PHP_SAPI !== 'cli') {
@@ -10,7 +10,7 @@ if (PHP_SAPI !== 'cli') {
 
 function publish01b1aAbort(string $reason): never
 {
-    fwrite(STDERR, "BOTBLE-PUBLISH-01B1AA ABORT: {$reason}\n");
+    fwrite(STDERR, "BOTBLE-PUBLISH-01B1A ABORT: {$reason}\n");
     exit(2);
 }
 
@@ -64,12 +64,12 @@ $head = trim($head);
 if ($branchRc || $headRc || $dirtyRc
     || trim($branch) !== 'feature/datapilot-botble-publish-01b1a-store-authorization-ui'
     || trim($dirty) !== '' || !preg_match('/^[0-9a-f]{40}$/D', $head)) {
-    publish01b1aAbort('Use clean reviewed BOTBLE-PUBLISH-01B1AA branch checkout');
+    publish01b1aAbort('Use clean reviewed BOTBLE-PUBLISH-01B1A branch checkout');
 }
 
 $base = 'dbcdd07aeb98c1533b3365af61b81f60bbdbcaf4';
 if (publish01b1aGit($source, ['merge-base', '--is-ancestor', $base, 'HEAD'])[0] !== 0) {
-    publish01b1aAbort('BOTBLE-PUBLISH-01B1AA must descend from approved BOTBLE-PUBLISH-01A baseline');
+    publish01b1aAbort('BOTBLE-PUBLISH-01B1A must descend from approved BOTBLE-PUBLISH-01A baseline');
 }
 if ($apply && (!in_array('--backup-confirmed', $argv, true)
     || !hash_equals($head, $get('--expected-head')))) {
@@ -112,14 +112,14 @@ foreach ($manifest as $path) {
     $plan[] = compact('path', 'from', 'to', 'before', 'action');
 }
 
-echo "BOTBLE-PUBLISH-01B1AA source commit: {$head}\n";
+echo "BOTBLE-PUBLISH-01B1A source commit: {$head}\n";
 foreach ($plan as $item) {
     echo $item['action'].' '.$item['path']."\n";
 }
 echo "No .env, Stripe, Botble, CJ credentials, legacy admin, existing records, or public_html file changes\n";
 
 if ($check) {
-    echo "PASS: read-only BOTBLE-PUBLISH-01B1AA preflight; no changes made\n";
+    echo "PASS: read-only BOTBLE-PUBLISH-01B1A preflight; no changes made\n";
     exit(0);
 }
 
@@ -180,4 +180,4 @@ fclose($pipes[2]);
 if (proc_close($proc) !== 0) {
     publish01b1aAbort('Laravel cache clear failed; use rollback backup');
 }
-echo "PASS: BOTBLE-PUBLISH-01B1AA store authorization UI fix installed; existing variation flag unchanged.\n";
+echo "PASS: BOTBLE-PUBLISH-01B1A store authorization UI fix installed; existing variation flag unchanged.\n";
