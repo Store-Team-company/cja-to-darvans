@@ -10,6 +10,12 @@
 @if(session('success'))<div class="bdp-alert success" role="status">{{ session('success') }}</div>@endif
 @if($errors->any())<div class="bdp-alert error" role="alert">{{ $errors->first() }}</div>@endif
 <div class="bdp-card">
+    <p>For complimentary, time-limited workspace access, open
+        <a href="{{ route('bdp.saas.workspaces') }}">Workspace access grants</a>.
+        Paid subscriptions are activated by verified Stripe webhooks, not by administrators.
+    </p>
+</div>
+<div class="bdp-card">
     <form method="get" action="{{ route('bdp.saas.customers') }}" class="bdp-toolbar">
         <label for="customer-search">Search customer email</label>
         <input id="customer-search" name="q" type="search" value="{{ $search }}" maxlength="255" placeholder="Customer email" style="max-width:360px">

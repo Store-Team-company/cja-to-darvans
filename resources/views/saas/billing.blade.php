@@ -10,7 +10,14 @@
 <div class="card split" style="flex-wrap:wrap;align-items:flex-start;margin-bottom:25px">
     <div>
         <div class="micro">Subscription status</div>
-        <h2 style="margin:8px 0"><span class="tag {{ $activeSubscription ? 'good' : 'warn' }}">{{ $activeSubscription ? 'Active' : ucfirst($bill?->status ?? 'Not subscribed') }}</span></h2>
+        <h2 style="margin:8px 0">
+            @if($paidSubscription)<span class="tag good">Stripe subscription active</span>
+            @elseif($adminGrant)<span class="tag good">Complimentary {{ ucfirst($adminGrant->plan_code) }} access</span>
+            @else<span class="tag warn">{{ ucfirst($bill?->status ?? 'Not subscribed') }}</span>@endif
+        </h2>
+        @if($adminGrant)
+        <p class="micro">Admin-provided access until {{ $adminGrant->expires_at->format('M j, Y') }}. No payment was charged for this grant. You can purchase a paid subscription separately.</p>
+        @endif
         <p style="margin:0">Plan: <strong>{{ ucfirst($bill?->plan_code ?? 'None') }}</strong>
             @if($bill?->current_period_end) · Current period ends {{ $bill->current_period_end->format('M j, Y') }} @endif
             @if($bill?->cancel_at_period_end) · Scheduled to cancel @endif
@@ -20,7 +27,7 @@
     <form action="{{ route('saas.workspace.billing.portal', $workspace->public_id) }}" method="post">@csrf<button type="submit" class="btn">Manage subscription in Stripe →</button></form>
     @endif
 </div>
-@if($bill?->pending_checkout_id && $bill?->pending_checkout_expires_at?->isFuture() && !$activeSubscription && $role === 'owner')
+@if($bill?->pending_checkout_id && $bill?->pending_checkout_expires_at?->isFuture() && !$paidSubscription && $role === 'owner')
 <div class="alert">
     <strong>You have an open Stripe Checkout session.</strong> Selecting a plan below will resume that session rather than opening a second payment.
     <form method="post" action="{{ route('saas.workspace.billing.cancel-checkout', $workspace->public_id) }}" style="margin-top:12px">@csrf
@@ -36,11 +43,11 @@
     <div class="split"><h3>{{ $plan['name'] }}</h3>@if($code === 'growth')<span class="tag good">Popular</span>@endif</div>
     <div class="plan-price">{{ $plan['price_label'] }} <small>/ month</small></div>
     <ul><li>{{ number_format($plan['product_limit']) }} products</li><li>{{ $plan['store_limit'] }} Botble {{ $plan['store_limit'] === 1 ? 'store' : 'stores' }}</li><li>{{ $plan['seat_limit'] }} team seats</li><li>{{ $plan['sync_label'] }} (upcoming)</li></ul>
-    @if($role === 'owner' && !$activeSubscription && $planCatalog->checkoutReady($code))
+    @if($role === 'owner' && !$paidSubscription && $planCatalog->checkoutReady($code))
         <form method="post" action="{{ route('saas.workspace.billing.checkout', $workspace->public_id) }}">@csrf<input type="hidden" name="plan" value="{{ $code }}"><button class="btn {{ $code === 'growth' ? 'btn-accent' : '' }}" style="width:100%" type="submit">Subscribe with Stripe →</button></form>
-    @elseif($activeSubscription && $bill?->plan_code === $code)
+    @elseif($paidSubscription && $bill?->plan_code === $code)
         <span class="tag good">Your current plan</span>
-    @else<button class="btn" style="width:100%" disabled>{{ $role !== 'owner' ? 'Owner permission required' : ($activeSubscription ? 'Manage in Stripe portal' : 'Checkout not available yet') }}</button>@endif
+    @else<button class="btn" style="width:100%" disabled>{{ $role !== 'owner' ? 'Owner permission required' : ($paidSubscription ? 'Manage in Stripe portal' : 'Checkout not available yet') }}</button>@endif
 </div>
 @endforeach
 </div>

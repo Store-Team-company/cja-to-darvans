@@ -18,7 +18,7 @@ class WorkspaceDashboardController extends Controller
         $active = $entitlements->active($workspace);
         $checks = [
             ['label' => 'Verify your email', 'done' => $request->user()->hasVerifiedEmail(), 'url' => null],
-            ['label' => 'Activate a monthly subscription', 'done' => $active, 'url' => route('saas.workspace.billing', $workspace->public_id)],
+            ['label' => 'Activate a workspace plan', 'done' => $active, 'url' => route('saas.workspace.billing', $workspace->public_id)],
             ['label' => 'Connect your CJ account', 'done' => $cjConnected, 'url' => route('saas.workspace.connections', $workspace->public_id)],
             ['label' => 'Pair your Botble store', 'done' => $storeConnected, 'url' => route('saas.workspace.connections', $workspace->public_id)],
             ['label' => 'Prepare your first product', 'done' => $workspace->products()->exists(), 'url' => route('saas.workspace.products', $workspace->public_id)],
@@ -33,6 +33,7 @@ class WorkspaceDashboardController extends Controller
             'storeConnected' => $storeConnected,
             'subscription' => $entitlements->billing($workspace),
             'activeSubscription' => $active,
+            'accessSource' => $entitlements->accessSource($workspace),
             'steps' => $checks,
             'readySteps' => count(array_filter($checks, fn (array $item) => $item['done'])),
             'recentProducts' => $workspace->products()->latest()->limit(5)->get(),
