@@ -23,11 +23,14 @@ final class SaasBotbleDraftDeliveryController extends Controller
         abort_unless($product->workspace_id === $workspace->id && $store->workspace_id === $workspace->id, 404);
         abort_unless($delivery->allowed($request->user(), $workspace, $product, $store), 403);
         try {
-            $result = $delivery->stage($request->user(), $workspace, $product, $store);
+            $result = $delivery->stage($request->user(), $workspace, $product, $store, $request->boolean('confirm_uniform_variant_price'));
         } catch (SaasBotbleDeliveryException $e) {
             $safe = match ($e->reason) {
                 'product_not_ready' => 'Fetch full CJ details and set a reviewed selling price, product title and SKU first.',
-                'variants_not_supported' => 'Variant-bearing products require verified Botble variation mapping. Start with a simple product.',
+                'variant_gate_disabled' => 'Full variation delivery is disabled until the upgraded Botble receiver is verified.',
+                'retail_confirmation_required' => 'Confirm that the same reviewed retail price applies to every supplier variation.',
+                'invalid_variants', 'variant_mapping_required' => 'Supplier variant IDs, SKUs or option labels are incomplete or duplicated. Refresh CJ details and review the options.',
+                'invalid_variant_weight', 'unsafe_variant_image', 'too_many_images' => 'Some supplier variation information requires correction before staging.',
                 'in_progress' => 'This draft is already being sent. Refresh its delivery status before retrying.',
                 'inbox_disabled' => 'Botble inbound drafts are disabled. Enable the inbox on the verified sandbox connector.',
                 'signature_rejected' => 'Botble rejected the signing key. Reverify the store pairing.',
