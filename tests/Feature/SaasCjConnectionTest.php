@@ -180,7 +180,7 @@ class SaasCjConnectionTest extends TestCase
         Http::fake(['developers.cjdropshipping.com/*' => Http::response($this->response(), 200)]);
         $this->actingAs($owner)->post($this->endpoint($workspace, 'verify'))->assertRedirect();
         $this->actingAs($owner)->post($this->endpoint($workspace, 'verify'))
-            ->assertSessionHasErrors('cj');
+            ->assertStatus(429);
         Http::assertSentCount(1);
     }
 
