@@ -27,7 +27,7 @@
 <div class="dp-inbox">
     <div class="dp-heading">
         <div>
-            <h1>Incoming CJ products <span class="dp-muted">Data Pilot Connector v0.3.1</span></h1>
+            <h1>Incoming CJ products <span class="dp-muted">Data Pilot Connector v0.3.3</span></h1>
             <p class="dp-muted">Signed products are staged first. Native catalog changes require explicit Botble admin review and approval.</p>
         </div>
         <a class="dp-btn secondary" href="{{ route('datapilot.connector.settings') }}">← Connection settings</a>
@@ -57,6 +57,9 @@
                 <span><strong>Received:</strong> {{ $draft->created_at?->format('Y-m-d H:i') }}</span>
                 @if($mapping)<span><strong>Botble product ID:</strong> {{ $mapping->botble_product_id }}</span>@endif
             </div>
+            @if(($payload['schema_version'] ?? null) === 2)
+                <div class="dp-alert">Complete {{ count($variants) }}-variant protocol-v2 draft received for review only. Original supplier option names and all SKU mappings are preserved. Native import is separately blocked pending verified media and variation compatibility.</div>
+            @endif
             <p class="dp-muted">Workspace: <code>{{ $draft->pairing?->workspace_public_id ?? 'Unknown' }}</code> · Store: <code>{{ $draft->pairing?->store_public_id ?? 'Unknown' }}</code></p>
 
             @if($draft->last_import_error)
@@ -72,7 +75,7 @@
             </details>
             <form class="dp-actions" method="post" action="{{ route('datapilot.connector.incoming.approve', $draft) }}" onsubmit="return confirm('Create or update this native Botble draft product?');">
                 @csrf
-                <button class="dp-btn" type="submit" @disabled(!config('datapilot-connector.catalog_import_enabled', false) || $draft->pairing?->status !== 'paired')>
+                <button class="dp-btn" type="submit" @disabled(($payload['schema_version'] ?? null) === 2 || !config('datapilot-connector.catalog_import_enabled', false) || $draft->pairing?->status !== 'paired')>
                     {{ $draft->status === 'failed' ? 'Retry native draft import' : 'Approve draft import' }}
                 </button>
             </form>
