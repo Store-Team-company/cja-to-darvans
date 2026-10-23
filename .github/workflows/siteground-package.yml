@@ -28,9 +28,13 @@ on:
       - 'scripts/deploy-siteground-auth04.php'
       - 'scripts/verify-siteground-auth04.php'
       - 'scripts/deploy-siteground-auth05.php'
+      - 'scripts/deploy-siteground-botble04.php'
+      - 'scripts/verify-siteground-botble04.php'
+      - 'database/migrations/2026_10_22_000005_create_saas_botble_pairing_challenges.php'
       - 'scripts/verify-siteground-auth05.php'
       - 'scripts/diagnose-siteground-auth04.php'
       - 'docs/DATAPILOT_AUTH_04_SITEGROUND_RUNBOOK.md'
+      - 'docs/DATAPILOT_BOTBLE_04_SANDBOX_PAIRING.md'
       - 'scripts/verify-siteground-saas-02.php'
       - 'docs/SAAS_CUSTOMER_PORTAL_STRIPE_02.md'
       - 'docs/SITEGROUND_UI_UPDATE.md'
@@ -106,6 +110,10 @@ jobs:
         run: |
           git switch -c fix/datapilot-auth-05-safe-live-route-merge
           php scripts/verify-siteground-auth05.php
+      - name: Verify BOTBLE-04 selective staging pairing installer
+        run: |
+          git switch -c feature/datapilot-botble-04-password-pilot-pairing
+          php scripts/verify-siteground-botble04.php
       - name: Build and smoke-check incremental SaaS update
         run: |
           php scripts/build-siteground-saas-update.php

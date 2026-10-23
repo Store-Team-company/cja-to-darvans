@@ -23,3 +23,8 @@ Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
 Route::post('/saas/stripe/webhook', \App\Http\Controllers\Saas\SaasBillingWebhookController::class)
     ->middleware('throttle:120,1')
     ->name('saas.stripe.webhook');
+
+// Machine-to-machine Botble site proves ownership using an administrator-issued
+// one-time secret. No browser session, no password, and no callback URLs.
+Route::post('/saas/botble/pair/complete', [\App\Http\Controllers\Saas\SaasBotblePairingController::class, 'complete'])
+    ->middleware('throttle:15,1')->name('saas.botble.pair.complete');
