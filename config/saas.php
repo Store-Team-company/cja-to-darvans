@@ -34,6 +34,10 @@ return [
         'enabled' => (bool) env('SAAS_BOTBLE_DRAFT_DELIVERY_ENABLED', false),
     ],
 
+    // Explicit v2 contract gate: full CJ variant staging only after the
+    // receiving Botble connector is upgraded and independently verified.
+    'botble_variant_drafts_enabled' => (bool) env('SAAS_BOTBLE_VARIANT_DRAFTS_ENABLED', false),
+
     // Stripe LIVE/TEST keys belong only in the server's private .env.
     // Price IDs must be created and configured in Stripe before checkout works.
     'stripe_secret' => env('STRIPE_SECRET_KEY', ''),
