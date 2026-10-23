@@ -203,6 +203,20 @@ class SaasCjConnectionTest extends TestCase
         $this->assertNull($conn->fresh()->api_key);
     }
 
+    public function test_invalid_cj_key_is_never_flashed_into_session_or_html(): void
+    {
+        [$owner, $workspace] = $this->fixture();
+        $key = 'private-short-key';
+        $response = $this->actingAs($owner)->post($this->endpoint($workspace, 'save'), [
+            'api_key' => $key,
+        ]);
+        $response->assertSessionHasErrors('api_key');
+        $this->assertArrayNotHasKey('api_key', session()->get('_old_input', []));
+        $this->actingAs($owner)->get(route('saas.workspace.connections', $workspace->public_id))
+            ->assertOk()->assertDontSee($key);
+        $this->assertDatabaseCount('saas_cj_connections', 0);
+    }
+
     public function test_no_plan_or_other_tenant_or_staff_can_authenticate_via_pilot(): void
     {
         [$owner, $workspace] = $this->fixture();
