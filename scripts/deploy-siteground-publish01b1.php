@@ -78,6 +78,7 @@ if ($apply && (!in_array('--backup-confirmed', $argv, true)
 
 // Never overwrite other tenant, legacy admin, Stripe, vendor, Botble or environment files.
 $manifest = [
+    'app/Services/Saas/SaasCjProductDetailsFetcher.php',
     'app/Services/Saas/SaasBotbleVariantDraftPayload.php',
     'app/Services/Saas/SaasBotbleDraftDelivery.php',
     'app/Http/Controllers/Saas/SaasBotbleDraftDeliveryController.php',
