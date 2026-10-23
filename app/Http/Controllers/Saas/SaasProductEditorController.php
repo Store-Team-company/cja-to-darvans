@@ -40,7 +40,13 @@ final class SaasProductEditorController extends Controller
         return view('saas.product-edit', [
             'workspace' => $workspace,
             'product' => $product,
-            'stores' => $workspace->stores()->orderBy('name')->get(['id', 'name', 'base_url', 'status']),
+            // Only authorized workspace stores are loaded. The server-side delivery
+            // guard requires public_id, workspace_id, and signing-key presence.
+            // shared_secret is encrypted at rest, hidden from JSON and never
+            // rendered in Blade; omitting it silently hid the staging action.
+            'stores' => $workspace->stores()->orderBy('name')->get([
+                'id', 'name', 'base_url', 'status', 'public_id', 'workspace_id', 'shared_secret',
+            ]),
             'role' => app(WorkspacePermissions::class)->roleFor($request->user(), $workspace),
             'activeSubscription' => app(SaasEntitlements::class)->active($workspace),
             'accessSource' => app(SaasEntitlements::class)->accessSource($workspace),
