@@ -47,6 +47,7 @@ $existing = [
     'app/Services/Saas/SaasEmailOtpService.php',
     'app/Services/Saas/SaasFirstPartyPilot.php',
     'database/migrations/2026_10_22_000005_create_saas_botble_pairing_challenges.php',
+    'app/Models/SaasCjConnection.php',
     'app/Http/Controllers/Saas/SaasConnectionController.php',
     'app/Http/Middleware/EnsureSaasEntitlement.php',
     'resources/views/saas/connections.blade.php',
