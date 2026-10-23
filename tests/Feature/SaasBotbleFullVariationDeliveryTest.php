@@ -79,6 +79,39 @@ final class SaasBotbleFullVariationDeliveryTest extends TestCase
         return [$owner, $workspace, $product, $store, $url];
     }
 
+    public function test_owner_sees_staging_action_for_connected_scoped_store_without_leaking_signing_secret(): void
+    {
+        [$owner, $workspace, $product, $store] = $this->fixture();
+
+        $this->actingAs($owner)
+            ->get(route('saas.workspace.products.edit', [
+                'workspace' => $workspace->public_id,
+                'product' => $product->id,
+            ]))
+            ->assertOk()
+            ->assertSee('Stage 40 variations for Botble review')
+            ->assertSee('confirm_uniform_variant_price')
+            ->assertDontSee('strictly-synthetic-fixture-secret');
+    }
+
+    public function test_importer_may_edit_but_cannot_see_authorized_stage_action(): void
+    {
+        [$owner, $workspace, $product, $store] = $this->fixture();
+        $importer = User::factory()->create([
+            'email_verified_at' => now(), 'saas_manually_approved_at' => now(),
+        ]);
+        $workspace->members()->attach($importer->id, ['role' => 'importer', 'status' => 'active']);
+
+        $this->actingAs($importer)
+            ->get(route('saas.workspace.products.edit', [
+                'workspace' => $workspace->public_id,
+                'product' => $product->id,
+            ]))
+            ->assertOk()
+            ->assertDontSee('Stage 40 variations for Botble review')
+            ->assertDontSee('strictly-synthetic-fixture-secret');
+    }
+
     public function test_forty_complete_variants_are_signed_and_staged_with_merchant_price(): void
     {
         [$owner, $workspace, $product, $store, $url] = $this->fixture();
