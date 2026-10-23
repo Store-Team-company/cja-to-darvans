@@ -12,7 +12,11 @@ class SaasProduct extends Model
     // Never allow a user-supplied workspace_id through mass assignment.
     protected $guarded = ['id', 'workspace_id'];
 
-    protected $casts = ['source_snapshot' => 'array'];
+    protected $casts = [
+        'source_snapshot' => 'array',
+        'selling_price_usd' => 'decimal:2',
+        'merchant_edited_at' => 'datetime',
+    ];
 
     public function workspace(): BelongsTo
     {
