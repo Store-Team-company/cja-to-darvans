@@ -137,6 +137,10 @@ jobs:
         run: |
           git switch -c feature/datapilot-billing-03-admin-grants
           php scripts/verify-siteground-billing03.php
+      - name: Verify PRODUCT-02 selective customer CJ importer updater
+        run: |
+          git switch -c feature/datapilot-product-02-selective-cj-search
+          php scripts/verify-siteground-product02.php
       - name: Build and smoke-check incremental SaaS update
         run: |
           php scripts/build-siteground-saas-update.php
