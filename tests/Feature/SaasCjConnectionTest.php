@@ -385,9 +385,11 @@ class SaasCjConnectionTest extends TestCase
         $record = $workspace->cjConnections()->firstOrFail();
         $this->assertNotSame('connected', $record->status);
         $this->assertNull($record->access_token);
+        // Suspended workspaces are deliberately hidden by the workspace
+        // membership middleware (404), not merely forbidden (403).
         $this->actingAs($owner)->post($this->endpoint($workspace, 'save'), [
             'api_key' => self::SECRET,
-        ])->assertForbidden();
+        ])->assertNotFound();
     }
 
     public function test_malformed_expiration_fields_or_http_redirect_cannot_connect(): void
