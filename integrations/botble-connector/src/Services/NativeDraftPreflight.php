@@ -103,8 +103,9 @@ final class NativeDraftPreflight
         $images = $data['images'] ?? null;
         if (!is_array($images) || !array_is_list($images)
             || count($images) < 1 || count($images) > self::MAX_GALLERY
-            || count($images) !== count(array_unique($images))
-            || count(array_filter($images, fn (mixed $url): bool => !$this->httpsImage($url))) > 0) {
+            || count(array_filter($images, fn (mixed $url): bool => !$this->httpsImage($url))) > 0
+            || count(array_filter($images, 'is_string')) !== count($images)
+            || count($images) !== count(array_unique($images))) {
             $errors[] = 'invalid_gallery';
             $images = [];
         }
