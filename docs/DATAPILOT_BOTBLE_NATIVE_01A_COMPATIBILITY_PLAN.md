@@ -59,3 +59,26 @@ NativeDraftPreflight::inspect() is pure: no database, network, file or media wri
 ## Remaining exact installed-runtime inspection
 
 Inspect the local ProductVariation helper implementation/return structure, Product image accessors/mutators, sale price handling, status and metadata model support. No native catalog writes until that adapter is verified with atomic rollback and image intake.
+
+
+## Installed native helper implementation: confirmed 2026-10-24
+
+The Botble 3.11.9 server source was inspected using ReflectionMethod for ProductVariation::getVariationByAttributesOrCreate(int|string $configurableProductId, array $attributes): array.
+
+**Exact observed behavior:** it first obtains any existing variation via getVariationByAttributes($configurableProductId, $attributes). Otherwise it creates an ec_product_variations model with configurable_product_id, constructs CreatedContentEvent(PRODUCT_VARIATIONS_MODULE_SCREEN_NAME, request(), $variation), and creates ec_product_variation_items rows for each attribute ID. Returns ['variation' => $variation, 'created' => true] for a new relation, and ['variation' => $variation, 'created' => false] for an existing one.
+
+**Critical limitation:** this method does NOT explicitly create a native child ec_products row or assign product_id in its body. A model lifecycle hook or event listener could conceivably do so, but that has not been verified. Existing CatalogImportService::upsertVariation currently rejects missing $relation->product_id, preventing mislinked catalog writes; retain this fail-closed guard. Also the method constructs an event object, which is not proof of event dispatch or child creation. Inspect getVariationByAttributes and model lifecycle/observers before implementing a native adapter.
+
+**Native import still BLOCKED:** No new native product or variation may be created using this helper until a disposable-clone integration test proves parent/child linkage, lifecycle side effects, transaction rollback, existing variation reuse and uniqueness, and no customer product mutations. All live catalog-import switches remain OFF.
+
+### Next operator read-only source check
+
+Use PHP Reflection on the installed ProductVariation class to print getVariationByAttributes plus candidate product/configurableProduct relationship methods, and verify ProductVariation::getObservableEvents. Do not invoke the create helper or its events during inspection. Review read-only model event listener registration and any Product creation service.
+
+### Native acceptance edge cases
+
+- After a dry run on a disposable store, require native relation.product_id to reference an existing Product with is_variation=true and the correct configurable_product_id; if not, atomic rollback.
+- Do not create parent twice on retries or reuse an existing nonmapped native product just because its SKU looks similar.
+- Do not assume new CreatedContentEvent(...) dispatches or invokes event listeners. Verify actual lifecycle behavior first.
+- Require atomic rollback for intentionally failing variation #40, and prove all created products, relations, media staging references and mappings are clean.
+- Protocol v2 inbox ID 1 retains price USD 80 but no separate USD 120 regular; native write must continue to reject this envelope.
