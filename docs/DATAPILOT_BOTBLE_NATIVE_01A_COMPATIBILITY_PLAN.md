@@ -39,3 +39,23 @@ Collect native helper reflection parameters and declaring path, complete schema 
 ## Release controls
 
 All work behind feature branches, draft PRs, exact-HEAD CI, independent QA and only then guarded sandbox deployment. Initial branch is documentation and runtime readiness only; **no implementation/deployment was performed by this branch**.
+
+## Exact-runtime findings: 2026-10-24
+
+- Installed Ecommerce 3.11.9 ec_products includes price, sale_price, image, images, stock flags, and is_variation. Price and sale_price cast to float; status casts to Botble BaseStatusEnum; image/images are not explicitly cast. Verify Product accessor/mutator before assigning image arrays.
+- ec_product_attribute_sets: title, slug, display_layout, status, order. ec_product_attributes: attribute_set_id, title, slug, is_default, order.
+- ec_product_variation_items: attribute_id, variation_id. ec_product_with_attribute_set: attribute_set_id, product_id, order.
+- meta_boxes: meta_key, meta_value, reference_id, reference_type.
+- ProductVariation::getVariationByAttributesOrCreate is STATIC with configurableProductId and attributes parameters. Need installed method body/return contract before calling it.
+- RvMedia, SeoHelper and MetaBox facades are all available.
+- Official API docs https://docs.botble.com/cms/api.html describe REST/Sanctum and optional API-key protection, not a verified native admin-write API for 40 variation products. Do not enable a second general-purpose REST API for this proven signed connector.
+- Official media docs https://docs.botble.com/cms/media.html describe RvMedia::handleUpload with validated UploadedFile from a local path. Only use after SSRF-safe download and content validation.
+- Official metadata docs https://docs.botble.com/cms/meta-box.html show MetaBox::saveMetaBoxData($product, 'seo_meta', [...]). Verify supported model configuration before writing.
+
+## Read-only contract prototype
+
+NativeDraftPreflight::inspect() is pure: no database, network, file or media write. It explicitly blocks existing schema-v2 inbox item from native import and validates a FUTURE v3 signed contract with reviewed regular and optional sale prices, 1..100 complete CJ IDs/SKUs/option labels, HTTPS image references and no guessed stock or supplier costs. Passing this preflight does NOT authorize native import and does NOT verify remote URL safety. Tests: tests/Feature/BotbleNativeDraftPreflightTest.php.
+
+## Remaining exact installed-runtime inspection
+
+Inspect the local ProductVariation helper implementation/return structure, Product image accessors/mutators, sale price handling, status and metadata model support. No native catalog writes until that adapter is verified with atomic rollback and image intake.
