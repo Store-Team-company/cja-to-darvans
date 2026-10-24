@@ -82,3 +82,27 @@ Use PHP Reflection on the installed ProductVariation class to print getVariation
 - Do not assume new CreatedContentEvent(...) dispatches or invokes event listeners. Verify actual lifecycle behavior first.
 - Require atomic rollback for intentionally failing variation #40, and prove all created products, relations, media staging references and mappings are clean.
 - Protocol v2 inbox ID 1 retains price USD 80 but no separate USD 120 regular; native write must continue to reject this envelope.
+
+
+## Exact native child-product pathway discovered from installed source grep (2026-10-24)
+
+Operator's read-only grep identified the *installed* Botble Ecommerce source at platform/plugins/ecommerce/src, including these verified paths and steps:
+
+- Importers/ProductImporter.php lines 762+: getVariationByAttributesOrCreate($product->getKey(), $addedAttributes) creates/finds the relation, then $version merges relation values with an import request.
+- Importers/ProductImporter.php lines 779-820: reuse/update an existing mapped child Product when appropriate; otherwise instantiate new Product() and fill($version). Lines 823-826 set name, status, brand_id, is_variation=1. **Next method lines (after 826) not provided yet**; cannot assume save/link ID assignments.
+- Http/Controllers/ProductController.php lines 179-201: after variation creation and attributes, sends variation data through postSaveAllVersions([...], $product->getKey(), $this->httpResponse()).
+- Traits/ProductActionsTrait.php lines 197-205 and 346-360: transaction-wrapped variation creation and postSaveAllVersions(...) for admin edits.
+- Services/Products/CreateProductVariationsService.php line 34 creates/fetches variation records but alone does not prove native child Product persistence.
+
+These findings refute any assumption that the variation helper alone creates the child Product; native Ecommerce uses a second save/link step. The existing DataPilot CatalogImportService rejects any missing relation.product_id; keep this guard and implement the **installed** follow-up logic in a dedicated transactional adapter only after inspecting the remaining lines.
+
+### Exact remaining read-only source excerpts
+
+On the daystart.pk Botble SSH account in ~/www/sandbox.daystart.pk/public_html:
+
+  sed -n '815,875p' platform/plugins/ecommerce/src/Importers/ProductImporter.php
+  grep -n 'function postSaveAllVersions' platform/plugins/ecommerce/src/Traits/ProductActionsTrait.php
+
+The second grep returns the method start line. Inspect that method with sed using its exact start/end, not an arbitrary global replace. In particular confirm how $variation->product_id is linked to saved child Product ID and whether SKU/price/image normalization or events happen before commit.
+
+Do not call the creation method or enable DATAPILOT_CATALOG_IMPORT_ENABLED; signed inbox ID 1 remains protocol-v2 / pending_review and must stay untouched.
